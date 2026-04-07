@@ -9,45 +9,66 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build ${{ matrix.target }}
+  build-x86:
+    name: Build x86_64
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            name: x86_64-linux
-          - target: aarch64-unknown-linux-gnu
-            name: aarch64-linux
-
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Install FUSE
+        run: sudo apt-get update && sudo apt-get install -y libfuse3-dev
 
       - name: Build
-        run: cross build --release --locked --target ${{ matrix.target }}
+        run: cargo build --release --locked
 
       - name: Package
         run: |
-          cd target/${{ matrix.target }}/release
-          tar -czvf ../../../obsfs-${{ github.ref_name }}-${{ matrix.name }}.tar.gz obsfs
-          cd ../../..
+          cd target/release
+          tar -czvf ../../obsfs-${{ github.ref_name }}-x86_64-linux.tar.gz obsfs
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: obsfs-${{ matrix.name }}
+          name: obsfs-x86_64-linux
+          path: obsfs-*.tar.gz
+
+  build-arm64:
+    name: Build aarch64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build in ARM64 container
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            rust:latest \
+            bash -c "
+              apt-get update && apt-get install -y libfuse3-dev pkg-config &&
+              cargo build --release --locked
+            "
+
+      - name: Package
+        run: |
+          cd target/release
+          tar -czvf ../../obsfs-${{ github.ref_name }}-aarch64-linux.tar.gz obsfs
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: obsfs-aarch64-linux
           path: obsfs-*.tar.gz
 
   release:
     name: Create Release
-    needs: build
+    needs: [build-x86, build-arm64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
