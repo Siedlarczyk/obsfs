@@ -49,9 +49,8 @@ impl DockerClient {
 
     /// Send HTTP request to Docker API and return response body.
     fn send_request(&self, method: &str, path: &str) -> Result<String> {
-        let mut stream =
-            UnixStream::connect(&self.socket_path)
-                .map_err(|e| anyhow!("Failed to connect to Docker socket: {}", e))?;
+        let mut stream = UnixStream::connect(&self.socket_path)
+            .map_err(|e| anyhow!("Failed to connect to Docker socket: {}", e))?;
 
         // Build HTTP request
         let request = format!(
@@ -59,15 +58,15 @@ impl DockerClient {
             method, path
         );
 
-        stream.write_all(request.as_bytes()).map_err(|e| {
-            anyhow!("Failed to write to Docker socket: {}", e)
-        })?;
+        stream
+            .write_all(request.as_bytes())
+            .map_err(|e| anyhow!("Failed to write to Docker socket: {}", e))?;
 
         // Read response
         let mut response = String::new();
-        stream.read_to_string(&mut response).map_err(|e| {
-            anyhow!("Failed to read from Docker socket: {}", e)
-        })?;
+        stream
+            .read_to_string(&mut response)
+            .map_err(|e| anyhow!("Failed to read from Docker socket: {}", e))?;
 
         // Extract body from HTTP response
         let body = response
@@ -81,10 +80,7 @@ impl DockerClient {
 
     /// List all containers (abbreviated output).
     pub fn list_containers(&self) -> Result<Vec<ContainerSummary>> {
-        let response = self.send_request(
-            "GET",
-            "/v1.24/containers/json?all=1&limit=100",
-        )?;
+        let response = self.send_request("GET", "/v1.24/containers/json?all=1&limit=100")?;
 
         let containers: Vec<Value> = serde_json::from_str(&response)
             .map_err(|e| anyhow!("Failed to parse containers list: {}", e))?;
@@ -120,10 +116,8 @@ impl DockerClient {
 
     /// Get detailed container information.
     pub fn inspect_container(&self, container_id: &str) -> Result<Value> {
-        let response = self.send_request(
-            "GET",
-            &format!("/v1.24/containers/{}/json", container_id),
-        )?;
+        let response =
+            self.send_request("GET", &format!("/v1.24/containers/{}/json", container_id))?;
 
         serde_json::from_str(&response)
             .map_err(|e| anyhow!("Failed to parse container info: {}", e))
@@ -228,7 +222,10 @@ impl DockerHandler {
 
         let mut output = String::new();
         output.push_str(&format!("Status: {}\n", status));
-        output.push_str(&format!("Running: {}\n", if running { "yes" } else { "no" }));
+        output.push_str(&format!(
+            "Running: {}\n",
+            if running { "yes" } else { "no" }
+        ));
 
         if let Some(pid) = state.get("Pid").and_then(|v| v.as_i64()) {
             if pid > 0 {
@@ -373,10 +370,7 @@ impl DockerHandler {
         if let Some(host_config) = info.get("HostConfig") {
             output.push_str("\nResources:\n");
 
-            if let Some(cpu_shares) = host_config
-                .get("CpuShares")
-                .and_then(|v| v.as_i64())
-            {
+            if let Some(cpu_shares) = host_config.get("CpuShares").and_then(|v| v.as_i64()) {
                 if cpu_shares > 0 {
                     output.push_str(&format!("  CPU Shares: {}\n", cpu_shares));
                 }
@@ -384,7 +378,10 @@ impl DockerHandler {
 
             if let Some(memory) = host_config.get("Memory").and_then(|v| v.as_i64()) {
                 if memory > 0 {
-                    output.push_str(&format!("  Memory Limit: {}\n", format_bytes(memory as u64)));
+                    output.push_str(&format!(
+                        "  Memory Limit: {}\n",
+                        format_bytes(memory as u64)
+                    ));
                 }
             }
 

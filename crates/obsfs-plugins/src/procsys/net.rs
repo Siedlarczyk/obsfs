@@ -5,8 +5,8 @@
 //!  face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
 //!    lo: 1234567  12345    0    0    0     0          0         0  1234567   12345    0    0    0     0       0          0
 
-use std::fs;
 use obsfs_core::{MetricProvider, MetricValue};
+use std::fs;
 
 /// Discovers available network interfaces from /proc/net/dev.
 pub fn discover_interfaces(proc_path: &str) -> Vec<String> {

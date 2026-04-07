@@ -101,7 +101,7 @@ impl ObsFs {
         FileAttr {
             ino,
             size,
-            blocks: (size + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64,
+            blocks: size.div_ceil(BLOCK_SIZE as u64),
             atime: SystemTime::now(),
             mtime: SystemTime::now(),
             ctime: SystemTime::now(),
@@ -121,7 +121,7 @@ impl ObsFs {
         FileAttr {
             ino,
             size,
-            blocks: (size + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64,
+            blocks: size.div_ceil(BLOCK_SIZE as u64),
             atime: SystemTime::now(),
             mtime: SystemTime::now(),
             ctime: SystemTime::now(),

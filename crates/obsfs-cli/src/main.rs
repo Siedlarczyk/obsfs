@@ -11,12 +11,12 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
-use obsfs_plugins::{
-    ConnectionsPlugin, DockerPlugin, HealthPlugin, Plugin, ProcessInfoPlugin, ProcSysPlugin,
-    SensorsPlugin, ServicesPlugin, UsersPlugin,
-};
 use obsfs_core::{Config, LogFormat, LogOutput, LoggingConfig, Registry};
 use obsfs_fuse::ObsFs;
+use obsfs_plugins::{
+    ConnectionsPlugin, DockerPlugin, HealthPlugin, Plugin, ProcSysPlugin, ProcessInfoPlugin,
+    SensorsPlugin, ServicesPlugin, UsersPlugin,
+};
 
 use banner::StartupBanner;
 
@@ -78,18 +78,19 @@ fn main() {
 
     // For mount command, we need to load config first to get logging settings
     let logging_config = match &cli.command {
-        Commands::Mount { config, .. } => {
-            load_logging_config(config.as_ref())
-        }
+        Commands::Mount { config, .. } => load_logging_config(config.as_ref()),
         _ => LoggingConfig::default(),
     };
 
     init_logging(&logging_config);
 
     let result = match cli.command {
-        Commands::Mount { path, daemon, config, allow_other } => {
-            cmd_mount(path, daemon, config, allow_other)
-        }
+        Commands::Mount {
+            path,
+            daemon,
+            config,
+            allow_other,
+        } => cmd_mount(path, daemon, config, allow_other),
         Commands::Unmount { path } => cmd_unmount(path),
         Commands::Status => cmd_status(),
         Commands::Version => cmd_version(),
@@ -207,10 +208,10 @@ fn cmd_mount(
 
     // Load and validate config BEFORE banner (may have errors)
     let config = match config_path {
-        Some(p) => Config::load_from(&p)
-            .with_context(|| format!("failed to load config from {:?}", p))?,
-        None => Config::load_default()
-            .context("failed to load default config")?,
+        Some(p) => {
+            Config::load_from(&p).with_context(|| format!("failed to load config from {:?}", p))?
+        }
+        None => Config::load_default().context("failed to load default config")?,
     };
 
     if let Err(errors) = config.validate() {
@@ -393,10 +394,16 @@ fn cmd_version() -> Result<()> {
     const RESET: &str = "\x1b[0m";
 
     println!();
-    println!("{CYAN}   /ObsFS{RESET}       {BOLD}v{}{RESET}", env!("CARGO_PKG_VERSION"));
+    println!(
+        "{CYAN}   /ObsFS{RESET}       {BOLD}v{}{RESET}",
+        env!("CARGO_PKG_VERSION")
+    );
     println!("{CYAN}   ├──┬──●{RESET}      {DIM}Observe everything as files.{RESET}");
     println!("{CYAN}   │  └──●{RESET}");
-    println!("{CYAN}   ├──●{RESET}         {DIM}Repository:{RESET} {}", env!("CARGO_PKG_REPOSITORY"));
+    println!(
+        "{CYAN}   ├──●{RESET}         {DIM}Repository:{RESET} {}",
+        env!("CARGO_PKG_REPOSITORY")
+    );
     println!("{CYAN}   └──┬──●{RESET}      {DIM}License:{RESET}    MIT");
     println!("{CYAN}      └──●{RESET}");
     println!();

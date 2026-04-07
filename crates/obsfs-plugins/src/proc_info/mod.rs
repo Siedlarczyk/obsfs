@@ -25,12 +25,12 @@ struct ProcessInfo {
     username: String,
 
     // CPU
-    utime: u64,      // user time in ticks
-    stime: u64,      // system time in ticks
+    utime: u64, // user time in ticks
+    stime: u64, // system time in ticks
 
     // Memory
-    rss_bytes: u64,       // Resident Set Size
-    vsize_bytes: u64,     // Virtual Size
+    rss_bytes: u64,   // Resident Set Size
+    vsize_bytes: u64, // Virtual Size
 
     // Threads and FDs
     threads: u32,
@@ -126,7 +126,8 @@ impl ProcessInfoProvider {
                             "t" => "Tracing stop",
                             "X" => "Dead",
                             _ => "Unknown",
-                        }.to_string();
+                        }
+                        .to_string();
                     }
                 } else if line.starts_with("PPid:") {
                     info.ppid = Self::parse_status_value(line);
@@ -315,18 +316,29 @@ impl ProcessInfoProvider {
         out.push_str("\n\n");
 
         // Status
-        out.push_str(&format!("Status:      {} ({})\n", info.state_desc, info.state));
-        out.push_str(&format!("User:        {} (uid {})\n", info.username, info.uid));
+        out.push_str(&format!(
+            "Status:      {} ({})\n",
+            info.state_desc, info.state
+        ));
+        out.push_str(&format!(
+            "User:        {} (uid {})\n",
+            info.username, info.uid
+        ));
         out.push_str(&format!("Parent:      PID {}\n", info.ppid));
-        out.push_str(&format!("Uptime:      {}\n", self.format_process_uptime(info)));
+        out.push_str(&format!(
+            "Uptime:      {}\n",
+            self.format_process_uptime(info)
+        ));
         out.push_str("\n");
 
         // Resources
-        out.push_str(&format!("CPU Time:    {} user, {} sys\n",
+        out.push_str(&format!(
+            "CPU Time:    {} user, {} sys\n",
             Self::format_ticks(info.utime),
             Self::format_ticks(info.stime)
         ));
-        out.push_str(&format!("Memory:      {} RSS / {} Virtual\n",
+        out.push_str(&format!(
+            "Memory:      {} RSS / {} Virtual\n",
             Self::format_bytes(info.rss_bytes),
             Self::format_bytes(info.vsize_bytes)
         ));
@@ -339,7 +351,8 @@ impl ProcessInfoProvider {
         } else {
             0
         };
-        out.push_str(&format!("FDs:         {} / {} ({}%)\n",
+        out.push_str(&format!(
+            "FDs:         {} / {} ({}%)\n",
             info.fd_count, info.fd_limit, fd_percent
         ));
 
@@ -352,7 +365,8 @@ impl ProcessInfoProvider {
             }
             if info.tcp_listen > 0 {
                 let ports: Vec<String> = info.listen_ports.iter().map(|p| p.to_string()).collect();
-                out.push_str(&format!("  TCP listening:   {} (ports: {})\n",
+                out.push_str(&format!(
+                    "  TCP listening:   {} (ports: {})\n",
                     info.tcp_listen,
                     ports.join(", ")
                 ));

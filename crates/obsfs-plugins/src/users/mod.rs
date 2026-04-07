@@ -109,7 +109,12 @@ impl SessionReader {
                         sessions.push(UserSession {
                             user: parts[0].to_string(),
                             tty: parts.get(1).unwrap_or(&"?").to_string(),
-                            host: parts.get(4).unwrap_or(&"-").trim_matches('(').trim_matches(')').to_string(),
+                            host: parts
+                                .get(4)
+                                .unwrap_or(&"-")
+                                .trim_matches('(')
+                                .trim_matches(')')
+                                .to_string(),
                             login_time: parts.get(2..4).map(|p| p.join(" ")).unwrap_or_default(),
                             pid: 0,
                         });
@@ -252,7 +257,10 @@ impl MetricProvider for UserSummaryProvider {
                 let user_sess = &user_sessions[user];
                 out.push_str(&format!("{}:\n", user));
                 for sess in user_sess {
-                    out.push_str(&format!("  {} from {} ({})\n", sess.tty, sess.host, sess.login_time));
+                    out.push_str(&format!(
+                        "  {} from {} ({})\n",
+                        sess.tty, sess.host, sess.login_time
+                    ));
                 }
             }
 
@@ -290,7 +298,10 @@ impl UserInfoHandler {
         if sessions.is_empty() {
             // Check if user exists but not logged in
             if let Ok(passwd) = fs::read_to_string("/etc/passwd") {
-                if !passwd.lines().any(|l| l.starts_with(&format!("{}:", username))) {
+                if !passwd
+                    .lines()
+                    .any(|l| l.starts_with(&format!("{}:", username)))
+                {
                     return None;
                 }
             }
@@ -304,7 +315,10 @@ impl UserInfoHandler {
         if sessions.is_empty() {
             out.push_str("Status: Not logged in\n");
         } else {
-            out.push_str(&format!("Status: Logged in ({} sessions)\n\n", sessions.len()));
+            out.push_str(&format!(
+                "Status: Logged in ({} sessions)\n\n",
+                sessions.len()
+            ));
 
             out.push_str("Sessions:\n");
             for sess in &sessions {
@@ -365,7 +379,9 @@ impl DynamicHandler for UserInfoHandler {
 
         // Check if user exists in /etc/passwd
         if let Ok(passwd) = fs::read_to_string("/etc/passwd") {
-            return passwd.lines().any(|l| l.starts_with(&format!("{}:", subpath)));
+            return passwd
+                .lines()
+                .any(|l| l.starts_with(&format!("{}:", subpath)));
         }
 
         false

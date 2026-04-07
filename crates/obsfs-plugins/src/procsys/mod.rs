@@ -6,11 +6,13 @@ mod fs;
 mod memory;
 mod net;
 
-use std::sync::Arc;
 use obsfs_core::{Plugin, Registry};
+use std::sync::Arc;
 
 pub use cpu::{CpuUsageProvider, LoadAverageProvider, UptimeProvider};
-pub use disk::{DiskReadBytesProvider, DiskReadIopsProvider, DiskWriteBytesProvider, DiskWriteIopsProvider};
+pub use disk::{
+    DiskReadBytesProvider, DiskReadIopsProvider, DiskWriteBytesProvider, DiskWriteIopsProvider,
+};
 pub use fs::{FsAvailableProvider, FsPercentUsedProvider, FsTotalProvider, FsUsedProvider};
 pub use memory::{MemoryMetricProvider, SwapUsedProvider};
 pub use net::{NetRxBytesProvider, NetRxPacketsProvider, NetTxBytesProvider, NetTxPacketsProvider};

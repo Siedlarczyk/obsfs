@@ -169,7 +169,9 @@ impl Default for Registry {
 
 impl std::fmt::Debug for Registry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Registry").field("root", &self.root).finish()
+        f.debug_struct("Registry")
+            .field("root", &self.root)
+            .finish()
     }
 }
 
@@ -206,9 +208,15 @@ mod tests {
     fn test_list_children() {
         let mut registry = Registry::new();
 
-        registry.insert("dir/a", FsNode::new_config("1".into(), |_| {})).unwrap();
-        registry.insert("dir/b", FsNode::new_config("2".into(), |_| {})).unwrap();
-        registry.insert("dir/c", FsNode::new_config("3".into(), |_| {})).unwrap();
+        registry
+            .insert("dir/a", FsNode::new_config("1".into(), |_| {}))
+            .unwrap();
+        registry
+            .insert("dir/b", FsNode::new_config("2".into(), |_| {}))
+            .unwrap();
+        registry
+            .insert("dir/c", FsNode::new_config("3".into(), |_| {}))
+            .unwrap();
 
         let mut children = registry.list_children("dir").unwrap();
         children.sort();
@@ -220,7 +228,9 @@ mod tests {
     fn test_remove() {
         let mut registry = Registry::new();
 
-        registry.insert("a/b", FsNode::new_config("x".into(), |_| {})).unwrap();
+        registry
+            .insert("a/b", FsNode::new_config("x".into(), |_| {}))
+            .unwrap();
 
         assert!(registry.exists("a/b"));
 
@@ -241,7 +251,9 @@ mod tests {
     fn test_path_conflict() {
         let mut registry = Registry::new();
 
-        registry.insert("a", FsNode::new_config("x".into(), |_| {})).unwrap();
+        registry
+            .insert("a", FsNode::new_config("x".into(), |_| {}))
+            .unwrap();
 
         let result = registry.insert("a/b", FsNode::new_config("y".into(), |_| {}));
         assert!(result.is_err());

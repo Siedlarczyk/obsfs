@@ -18,19 +18,19 @@ use std::sync::Arc;
 /// Thresholds for determining health status
 struct Thresholds {
     /// CPU load / cores ratio
-    cpu_warn: f64,      // 0.7 = 70% of cores
-    cpu_critical: f64,  // 1.0 = 100% of cores
+    cpu_warn: f64, // 0.7 = 70% of cores
+    cpu_critical: f64, // 1.0 = 100% of cores
 
     /// Memory usage percentage
-    mem_warn: f64,      // 80%
-    mem_critical: f64,  // 95%
+    mem_warn: f64, // 80%
+    mem_critical: f64, // 95%
 
     /// Swap usage - any usage is warning
-    swap_warn: f64,     // 10%
+    swap_warn: f64, // 10%
     swap_critical: f64, // 50%
 
     /// Disk usage percentage
-    disk_warn: f64,     // 80%
+    disk_warn: f64, // 80%
     disk_critical: f64, // 95%
 }
 
@@ -121,7 +121,11 @@ impl HealthProvider {
         // Read load average
         let load_1m = fs::read_to_string(&loadavg_path)
             .ok()
-            .and_then(|s| s.split_whitespace().next().and_then(|v| v.parse::<f64>().ok()))
+            .and_then(|s| {
+                s.split_whitespace()
+                    .next()
+                    .and_then(|v| v.parse::<f64>().ok())
+            })
             .unwrap_or(0.0);
 
         // Count number of cores
@@ -157,7 +161,11 @@ impl HealthProvider {
             None
         };
 
-        CheckResult { status, line, issue }
+        CheckResult {
+            status,
+            line,
+            issue,
+        }
     }
 
     /// Check memory health based on available percentage
@@ -210,7 +218,11 @@ impl HealthProvider {
             None
         };
 
-        CheckResult { status, line, issue }
+        CheckResult {
+            status,
+            line,
+            issue,
+        }
     }
 
     /// Check swap health; any usage is a warning
@@ -262,7 +274,11 @@ impl HealthProvider {
             None
         };
 
-        CheckResult { status, line, issue }
+        CheckResult {
+            status,
+            line,
+            issue,
+        }
     }
 
     /// Check root disk health
@@ -318,7 +334,11 @@ impl HealthProvider {
             None
         };
 
-        CheckResult { status, line, issue }
+        CheckResult {
+            status,
+            line,
+            issue,
+        }
     }
 
     /// Parse numeric value from meminfo line (e.g., "MemTotal:       16384000 kB")
@@ -490,9 +510,8 @@ mod tests {
     #[test]
     fn test_health_provider_ok() {
         let mock_proc = create_mock_proc();
-        let provider = HealthProvider::with_proc_path(
-            mock_proc.path().to_string_lossy().to_string()
-        );
+        let provider =
+            HealthProvider::with_proc_path(mock_proc.path().to_string_lossy().to_string());
 
         let result = provider.collect().unwrap();
 
@@ -525,9 +544,7 @@ mod tests {
         writeln!(f, "SwapTotal:       2000000 kB").unwrap();
         writeln!(f, "SwapFree:        2000000 kB").unwrap();
 
-        let provider = HealthProvider::with_proc_path(
-            dir.path().to_string_lossy().to_string()
-        );
+        let provider = HealthProvider::with_proc_path(dir.path().to_string_lossy().to_string());
 
         let result = provider.collect().unwrap();
 

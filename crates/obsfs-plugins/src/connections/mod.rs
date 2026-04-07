@@ -335,10 +335,7 @@ impl MetricProvider for EstablishedProvider {
         out.push_str("Established Connections\n");
         out.push_str(&"=".repeat(70));
         out.push_str("\n\n");
-        out.push_str(&format!(
-            "{:<21} {:<21}\n",
-            "LOCAL", "REMOTE"
-        ));
+        out.push_str(&format!("{:<21} {:<21}\n", "LOCAL", "REMOTE"));
         out.push_str(&"-".repeat(70));
         out.push('\n');
 

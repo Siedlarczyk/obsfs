@@ -40,17 +40,29 @@ impl MetricValue {
 
         match self {
             MetricValue::Gauge(v) => {
-                format!(r#"{{"value":{},"type":"gauge","timestamp":"{}"}}"#, v, timestamp)
+                format!(
+                    r#"{{"value":{},"type":"gauge","timestamp":"{}"}}"#,
+                    v, timestamp
+                )
             }
             MetricValue::Counter(v) => {
-                format!(r#"{{"value":{},"type":"counter","timestamp":"{}"}}"#, v, timestamp)
+                format!(
+                    r#"{{"value":{},"type":"counter","timestamp":"{}"}}"#,
+                    v, timestamp
+                )
             }
             MetricValue::Text(s) => {
                 let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-                format!(r#"{{"value":"{}","type":"text","timestamp":"{}"}}"#, escaped, timestamp)
+                format!(
+                    r#"{{"value":"{}","type":"text","timestamp":"{}"}}"#,
+                    escaped, timestamp
+                )
             }
             MetricValue::Stream(_) => {
-                format!(r#"{{"value":null,"type":"stream","timestamp":"{}"}}"#, timestamp)
+                format!(
+                    r#"{{"value":null,"type":"stream","timestamp":"{}"}}"#,
+                    timestamp
+                )
             }
         }
     }
@@ -178,18 +190,19 @@ impl FsNode {
 impl std::fmt::Debug for FsNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FsNode::Directory { children } => {
-                f.debug_struct("Directory").field("children", children).finish()
-            }
-            FsNode::Metric { provider } => {
-                f.debug_struct("Metric").field("path", &provider.path()).finish()
-            }
-            FsNode::Config { value, .. } => {
-                f.debug_struct("Config")
-                    .field("value", value)
-                    .field("on_change", &"<callback>")
-                    .finish()
-            }
+            FsNode::Directory { children } => f
+                .debug_struct("Directory")
+                .field("children", children)
+                .finish(),
+            FsNode::Metric { provider } => f
+                .debug_struct("Metric")
+                .field("path", &provider.path())
+                .finish(),
+            FsNode::Config { value, .. } => f
+                .debug_struct("Config")
+                .field("value", value)
+                .field("on_change", &"<callback>")
+                .finish(),
         }
     }
 }
@@ -264,7 +277,10 @@ mod tests {
         assert_eq!(MetricValue::Gauge(23.456).to_plain(), "23.46");
         assert_eq!(MetricValue::Gauge(100.0).to_plain(), "100.00");
         assert_eq!(MetricValue::Counter(1_234_567).to_plain(), "1234567");
-        assert_eq!(MetricValue::Text("healthy".to_string()).to_plain(), "healthy");
+        assert_eq!(
+            MetricValue::Text("healthy".to_string()).to_plain(),
+            "healthy"
+        );
     }
 
     #[test]

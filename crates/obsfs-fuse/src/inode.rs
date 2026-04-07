@@ -91,7 +91,8 @@ impl InodeTable {
 
     /// Gets or allocates an inode for a path.
     pub fn get_or_allocate(&mut self, path: &str) -> u64 {
-        self.resolve_inode(path).unwrap_or_else(|| self.allocate(path))
+        self.resolve_inode(path)
+            .unwrap_or_else(|| self.allocate(path))
     }
 }
 

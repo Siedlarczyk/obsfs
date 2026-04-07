@@ -1,9 +1,9 @@
 //! Filesystem usage metrics using statvfs.
 
+use obsfs_core::{MetricProvider, MetricValue};
 use std::ffi::CString;
 use std::fs;
 use std::mem::MaybeUninit;
-use obsfs_core::{MetricProvider, MetricValue};
 
 /// Discovers mounted filesystems from /proc/mounts.
 pub fn discover_filesystems(proc_path: &str) -> Vec<(String, String)> {
@@ -35,9 +35,25 @@ pub fn discover_filesystems(proc_path: &str) -> Vec<(String, String)> {
 fn is_real_filesystem(fs_type: &str, mount_point: &str) -> bool {
     // Exclude virtual/pseudo filesystems
     let virtual_fs = [
-        "proc", "sysfs", "devtmpfs", "devpts", "tmpfs", "cgroup", "cgroup2",
-        "pstore", "securityfs", "debugfs", "fusectl", "mqueue", "hugetlbfs",
-        "rpc_pipefs", "nfsd", "binfmt_misc", "autofs", "overlay", "squashfs",
+        "proc",
+        "sysfs",
+        "devtmpfs",
+        "devpts",
+        "tmpfs",
+        "cgroup",
+        "cgroup2",
+        "pstore",
+        "securityfs",
+        "debugfs",
+        "fusectl",
+        "mqueue",
+        "hugetlbfs",
+        "rpc_pipefs",
+        "nfsd",
+        "binfmt_misc",
+        "autofs",
+        "overlay",
+        "squashfs",
     ];
 
     if virtual_fs.contains(&fs_type) {
@@ -61,9 +77,7 @@ fn sanitize_mount_name(mount_point: &str) -> String {
     if mount_point == "/" {
         "root".to_string()
     } else {
-        mount_point
-            .trim_start_matches('/')
-            .replace('/', "_")
+        mount_point.trim_start_matches('/').replace('/', "_")
     }
 }
 
@@ -75,8 +89,8 @@ struct FsStats {
 }
 
 fn get_fs_stats(mount_point: &str) -> anyhow::Result<FsStats> {
-    let c_path = CString::new(mount_point)
-        .map_err(|_| anyhow::anyhow!("invalid mount point path"))?;
+    let c_path =
+        CString::new(mount_point).map_err(|_| anyhow::anyhow!("invalid mount point path"))?;
 
     let mut stat: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
 
@@ -98,7 +112,11 @@ fn get_fs_stats(mount_point: &str) -> anyhow::Result<FsStats> {
     let free = stat.f_bfree as u64 * block_size;
     let used = total - free;
 
-    Ok(FsStats { total, available, used })
+    Ok(FsStats {
+        total,
+        available,
+        used,
+    })
 }
 
 /// Provides total bytes for a filesystem.

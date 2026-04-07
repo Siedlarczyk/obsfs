@@ -41,7 +41,13 @@ impl ServiceInfoProvider {
     /// List all available services from systemctl.
     pub fn list_services(&self) -> Vec<String> {
         let output = Command::new("systemctl")
-            .args(["list-units", "--type=service", "--all", "--no-legend", "--no-pager"])
+            .args([
+                "list-units",
+                "--type=service",
+                "--all",
+                "--no-legend",
+                "--no-pager",
+            ])
             .output();
 
         match output {
@@ -123,7 +129,10 @@ impl ServiceInfoProvider {
         }
 
         if info.memory_bytes > 0 {
-            out.push_str(&format!("Memory:      {}\n", Self::format_bytes(info.memory_bytes)));
+            out.push_str(&format!(
+                "Memory:      {}\n",
+                Self::format_bytes(info.memory_bytes)
+            ));
         }
 
         if info.tasks > 0 {
@@ -181,7 +190,11 @@ impl DynamicHandler for ServiceInfoProvider {
         let service_name = subpath.split('/').next().unwrap_or(subpath);
 
         let output = Command::new("systemctl")
-            .args(["show", &format!("{}.service", service_name), "--property=LoadState"])
+            .args([
+                "show",
+                &format!("{}.service", service_name),
+                "--property=LoadState",
+            ])
             .output();
 
         match output {

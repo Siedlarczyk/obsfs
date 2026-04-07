@@ -1,8 +1,8 @@
 //! Memory metrics from /proc/meminfo.
 
+use obsfs_core::{MetricProvider, MetricValue};
 use std::collections::HashMap;
 use std::fs;
-use obsfs_core::{MetricProvider, MetricValue};
 
 /// Provides a single memory metric from /proc/meminfo.
 #[derive(Debug)]

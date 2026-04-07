@@ -1,7 +1,7 @@
 //! CPU metrics from /proc/stat and /proc/loadavg.
 
-use std::fs;
 use obsfs_core::{MetricProvider, MetricValue};
+use std::fs;
 
 /// Provides CPU usage percentage from /proc/stat.
 #[derive(Debug)]

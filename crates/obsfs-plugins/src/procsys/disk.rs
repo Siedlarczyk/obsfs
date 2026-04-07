@@ -7,8 +7,8 @@
 //!
 //! Sector size is typically 512 bytes.
 
-use std::fs;
 use obsfs_core::{MetricProvider, MetricValue};
+use std::fs;
 
 const SECTOR_SIZE: u64 = 512;
 

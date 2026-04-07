@@ -46,9 +46,7 @@ impl StartupBanner {
     /// Print the initial banner with version.
     pub fn print_header(&mut self, version: &str) {
         println!();
-        self.print_line(&format!(
-            "{BOLD}{CYAN}ObsFS{RESET} {DIM}v{version}{RESET}"
-        ));
+        self.print_line(&format!("{BOLD}{CYAN}ObsFS{RESET} {DIM}v{version}{RESET}"));
         self.print_line(&format!("{DIM}Initializing...{RESET}"));
     }
 
@@ -60,9 +58,7 @@ impl StartupBanner {
             format!("{RED}FAIL{RESET}")
         };
         let dots = ".".repeat(20 - name.len().min(20));
-        self.print_line(&format!(
-            "{DIM}{name}{RESET} {DIM}{dots}{RESET} {status}"
-        ));
+        self.print_line(&format!("{DIM}{name}{RESET} {DIM}{dots}{RESET} {status}"));
     }
 
     /// Print the mount status.
