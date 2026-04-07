@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-x86:
     name: Build x86_64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # Use 22.04 for better compatibility
     steps:
       - uses: actions/checkout@v4
 
@@ -19,25 +19,43 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install FUSE
-        run: sudo apt-get update && sudo apt-get install -y libfuse3-dev
+        run: sudo apt-get update && sudo apt-get install -y libfuse3-dev patchelf
 
       - name: Build
         run: cargo build --release --locked
 
-      - name: Package
+      - name: Bundle libraries
         run: |
-          cd target/release
-          tar -czvf ../../obsfs-${{ github.ref_name }}-x86_64-linux.tar.gz obsfs
+          mkdir -p bundle/lib
+          cp target/release/obsfs bundle/
+          # Copy required libraries
+          cp /usr/lib/x86_64-linux-gnu/libfuse3.so.3* bundle/lib/
+          # Set RPATH to look for libs in ./lib
+          patchelf --set-rpath '$ORIGIN/lib' bundle/obsfs
 
-      - name: Upload artifact
+      - name: Package tar.gz
+        run: |
+          cd bundle
+          tar -czvf ../obsfs-${{ github.ref_name }}-x86_64-linux.tar.gz .
+
+      - name: Package .deb
+        run: |
+          cd pkg/deb
+          chmod +x build-deb.sh
+          ./build-deb.sh ${{ github.ref_name }} amd64 ../../target/release/obsfs
+          mv *.deb ../../
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: obsfs-x86_64-linux
-          path: obsfs-*.tar.gz
+          path: |
+            obsfs-*.tar.gz
+            obsfs_*.deb
 
   build-arm64:
     name: Build aarch64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -51,20 +69,33 @@ jobs:
             -w /workspace \
             rust:latest \
             bash -c "
-              apt-get update && apt-get install -y libfuse3-dev pkg-config &&
-              cargo build --release --locked
+              apt-get update && apt-get install -y libfuse3-dev pkg-config patchelf &&
+              cargo build --release --locked &&
+              mkdir -p bundle/lib &&
+              cp target/release/obsfs bundle/ &&
+              cp /usr/lib/aarch64-linux-gnu/libfuse3.so.3* bundle/lib/ &&
+              patchelf --set-rpath '\$ORIGIN/lib' bundle/obsfs
             "
 
-      - name: Package
+      - name: Package tar.gz
         run: |
-          cd target/release
-          tar -czvf ../../obsfs-${{ github.ref_name }}-aarch64-linux.tar.gz obsfs
+          cd bundle
+          tar -czvf ../obsfs-${{ github.ref_name }}-aarch64-linux.tar.gz .
 
-      - name: Upload artifact
+      - name: Package .deb
+        run: |
+          cd pkg/deb
+          chmod +x build-deb.sh
+          ./build-deb.sh ${{ github.ref_name }} arm64 ../../target/release/obsfs
+          mv *.deb ../../
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: obsfs-aarch64-linux
-          path: obsfs-*.tar.gz
+          path: |
+            obsfs-*.tar.gz
+            obsfs_*.deb
 
   release:
     name: Create Release
@@ -82,7 +113,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum obsfs-*.tar.gz > checksums.txt
+          sha256sum obsfs-*.tar.gz obsfs_*.deb > checksums.txt
           cat checksums.txt
 
       - name: Create Release
@@ -92,4 +123,5 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/obsfs-*.tar.gz
+            artifacts/obsfs_*.deb
             artifacts/checksums.txt

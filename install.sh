@@ -136,13 +136,24 @@ install_binary() {
         error "Failed to extract archive"
     }
 
-    # Install binary
+    # Install binary and libraries
     if [ "$install_dir" = "/usr/local/bin" ] && [ "$(id -u)" != "0" ]; then
         info "Installing to ${install_dir} (requires sudo)..."
         sudo install -m 755 "$tmp_dir/obsfs" "$install_dir/obsfs"
+        # Install bundled libraries if present
+        if [ -d "$tmp_dir/lib" ]; then
+            sudo mkdir -p "$install_dir/../lib/obsfs"
+            sudo cp -r "$tmp_dir/lib/"* "$install_dir/../lib/obsfs/"
+            sudo patchelf --set-rpath "/usr/local/lib/obsfs" "$install_dir/obsfs" 2>/dev/null || true
+        fi
     else
         info "Installing to ${install_dir}..."
         install -m 755 "$tmp_dir/obsfs" "$install_dir/obsfs"
+        if [ -d "$tmp_dir/lib" ]; then
+            mkdir -p "$install_dir/../lib/obsfs"
+            cp -r "$tmp_dir/lib/"* "$install_dir/../lib/obsfs/"
+            patchelf --set-rpath "$install_dir/../lib/obsfs" "$install_dir/obsfs" 2>/dev/null || true
+        fi
     fi
 
     success "Installed to ${install_dir}/obsfs"
