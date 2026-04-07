@@ -329,7 +329,7 @@ impl ProcessInfoProvider {
             "Uptime:      {}\n",
             self.format_process_uptime(info)
         ));
-        out.push_str("\n");
+        out.push('\n');
 
         // Resources
         out.push_str(&format!(
@@ -343,7 +343,7 @@ impl ProcessInfoProvider {
             Self::format_bytes(info.vsize_bytes)
         ));
         out.push_str(&format!("Threads:     {}\n", info.threads));
-        out.push_str("\n");
+        out.push('\n');
 
         // File descriptors
         let fd_percent = if info.fd_limit > 0 {
@@ -358,7 +358,7 @@ impl ProcessInfoProvider {
 
         // Network
         if info.tcp_established > 0 || info.tcp_listen > 0 {
-            out.push_str("\n");
+            out.push('\n');
             out.push_str("Network:\n");
             if info.tcp_established > 0 {
                 out.push_str(&format!("  TCP established: {}\n", info.tcp_established));
@@ -374,7 +374,7 @@ impl ProcessInfoProvider {
         }
 
         // Paths
-        out.push_str("\n");
+        out.push('\n');
         if !info.cwd.is_empty() {
             out.push_str(&format!("Cwd:         {}\n", info.cwd));
         }
@@ -572,7 +572,7 @@ mod tests {
 
         // Should find at least the current process
         assert!(!pids.is_empty());
-        assert!(pids.contains(&(std::process::id() as u32)));
+        assert!(pids.contains(&std::process::id()));
     }
 
     #[test]

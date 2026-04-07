@@ -179,7 +179,7 @@ impl DockerHandler {
         // If identifier looks like a short ID (12 chars of hex), try it directly
         if identifier.len() == 12 && identifier.chars().all(|c| c.is_ascii_hexdigit()) {
             // Try using it directly
-            if let Ok(_) = self.client.inspect_container(identifier) {
+            if self.client.inspect_container(identifier).is_ok() {
                 return Ok(identifier.to_string());
             }
         }

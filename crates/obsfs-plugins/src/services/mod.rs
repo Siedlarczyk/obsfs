@@ -143,7 +143,7 @@ impl ServiceInfoProvider {
             out.push_str(&format!("Started:     {}\n", info.started_at));
         }
 
-        out.push_str("\n");
+        out.push('\n');
         out.push_str(&format!("Description: {}\n", info.description));
 
         out

@@ -5,6 +5,8 @@
 //!
 //! All plugins implement the [`Plugin`] trait for unified registration.
 
+#![allow(clippy::new_without_default)]
+
 pub use obsfs_core::{DynamicHandler, MetricProvider, MetricValue, Plugin};
 
 pub mod connections;
