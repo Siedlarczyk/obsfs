@@ -67,7 +67,7 @@ jobs:
               apk add --no-cache curl build-base fuse3-dev fuse3-static pkgconf musl-dev &&
               curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable &&
               source ~/.cargo/env &&
-              RUSTFLAGS='-C target-feature=-crt-static' cargo build --release --locked &&
+              RUSTFLAGS='-C target-feature=-crt-static -C link-arg=-static-libgcc' cargo build --release --locked &&
               strip target/release/obsfs
             "
 
@@ -150,7 +150,7 @@ jobs:
               apk add --no-cache curl build-base fuse3-dev fuse3-static pkgconf musl-dev &&
               curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable &&
               source ~/.cargo/env &&
-              RUSTFLAGS='-C target-feature=-crt-static' cargo build --release --locked &&
+              RUSTFLAGS='-C target-feature=-crt-static -C link-arg=-static-libgcc' cargo build --release --locked &&
               strip target/release/obsfs
             "
 
