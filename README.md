@@ -33,19 +33,7 @@
 
 ## Demo
 
-```bash
-$ cat /obs/system/cpu/usage
-23.45
-
-$ cat /obs/system/memory/available
-8589934592
-
-$ watch -n 1 cat /obs/health
-status: healthy
-cpu: 23.4% (ok)
-memory: 45.2% (ok)
-disk: 67.8% (ok)
-```
+![ObsFS Demo](.github/assets/demo.gif)
 
 ## Features
 
