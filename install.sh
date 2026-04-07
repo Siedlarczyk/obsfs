@@ -105,6 +105,17 @@ download() {
     fi
 }
 
+detect_libc() {
+    # Check if using musl (Alpine, Void, etc.)
+    if ldd --version 2>&1 | grep -qi musl; then
+        echo "musl"
+    elif [ -f /etc/alpine-release ]; then
+        echo "musl"
+    else
+        echo "glibc"
+    fi
+}
+
 install_binary() {
     os="$1"
     arch="$2"
@@ -117,11 +128,20 @@ install_binary() {
         aarch64) arch_name="aarch64" ;;
     esac
 
+    # Detect libc type
+    libc=$(detect_libc)
+    if [ "$libc" = "musl" ]; then
+        suffix="-musl"
+        info "Detected musl libc (Alpine/Void)"
+    else
+        suffix=""
+    fi
+
     # Build download URL
-    archive_name="obsfs-v${version}-${arch_name}-${os}.tar.gz"
+    archive_name="obsfs-v${version}-${arch_name}-${os}${suffix}.tar.gz"
     download_url="https://github.com/${GITHUB_REPO}/releases/download/v${version}/${archive_name}"
 
-    info "Downloading ObsFS v${version} for ${os}/${arch}..."
+    info "Downloading ObsFS v${version} for ${os}/${arch} (${libc})..."
 
     # Create temp directory
     tmp_dir=$(mktemp -d)
@@ -140,11 +160,14 @@ install_binary() {
     if [ "$install_dir" = "/usr/local/bin" ] && [ "$(id -u)" != "0" ]; then
         info "Installing to ${install_dir} (requires sudo)..."
         sudo install -m 755 "$tmp_dir/obsfs" "$install_dir/obsfs"
-        # Install bundled libraries if present
+        # Install bundled libraries if present (glibc builds only)
         if [ -d "$tmp_dir/lib" ]; then
             sudo mkdir -p "$install_dir/../lib/obsfs"
             sudo cp -r "$tmp_dir/lib/"* "$install_dir/../lib/obsfs/"
-            sudo patchelf --set-rpath "/usr/local/lib/obsfs" "$install_dir/obsfs" 2>/dev/null || true
+            # Configure dynamic linker to find bundled libraries
+            # (RPATH is ignored by sudo for security, so we use ldconfig)
+            echo "/usr/local/lib/obsfs" | sudo tee /etc/ld.so.conf.d/obsfs.conf >/dev/null
+            sudo ldconfig
         fi
     else
         info "Installing to ${install_dir}..."

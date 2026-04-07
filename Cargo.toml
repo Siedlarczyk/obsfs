@@ -1,314 +1,37 @@
-# =============================================================================
 # ObsFS - Observability Filesystem
-# =============================================================================
-#
-# This is a Cargo WORKSPACE configuration file. A workspace in Rust allows you
-# to manage multiple related packages (called "crates") together. Benefits:
-#
-# 1. SHARED DEPENDENCIES: All crates share the same Cargo.lock file, ensuring
-#    consistent dependency versions across the entire project.
-#
-# 2. UNIFIED BUILDS: Running `cargo build` from the root builds all crates.
-#    Running `cargo test` runs tests for all crates.
-#
-# 3. INTER-CRATE DEPENDENCIES: Crates within the workspace can depend on each
-#    other using path dependencies (e.g., obsfs-cli depends on obsfs-core).
-#
-# Learn more: https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html
-# =============================================================================
 
 [workspace]
-# The `members` array lists all crates that belong to this workspace.
-# Each path points to a directory containing a Cargo.toml file.
 members = [
-    "crates/obsfs-core",       # Shared types, configuration, and utilities
-    "crates/obsfs-fuse",       # FUSE filesystem implementation
-    "crates/obsfs-plugins",    # Metric plugins (procfs, logs, etc.)
-    "crates/obsfs-cli",        # Command-line interface binary
+    "crates/obsfs-core",
+    "crates/obsfs-fuse",
+    "crates/obsfs-plugins",
+    "crates/obsfs-cli",
 ]
-
-# The `resolver` setting controls how Cargo resolves dependency features.
-# Version "2" is the modern resolver (default for Rust 2021 edition) that:
-# - Avoids unifying features across build/dev/normal dependencies
-# - Handles platform-specific dependencies more intelligently
-# Learn more: https://doc.rust-lang.org/cargo/reference/resolver.html
 resolver = "2"
 
-# =============================================================================
-# WORKSPACE DEPENDENCIES
-# =============================================================================
-#
-# Dependencies defined here can be inherited by member crates using:
-#   [dependencies]
-#   fuser = { workspace = true }
-#
-# This ensures all crates use the SAME VERSION of each dependency, preventing
-# version conflicts and reducing compile times (shared compilation artifacts).
-# =============================================================================
-
 [workspace.dependencies]
-# -----------------------------------------------------------------------------
-# FUSE (Filesystem in Userspace)
-# -----------------------------------------------------------------------------
-# `fuser` is a Rust library for creating FUSE filesystems. FUSE allows you to
-# implement a filesystem in userspace (normal program) instead of kernel space.
-#
-# How FUSE works:
-# 1. Your program registers with the FUSE kernel module
-# 2. When someone accesses /obs/system/cpu/usage, the kernel forwards the
-#    request to your program via FUSE
-# 3. Your program handles the request (e.g., reads /proc/stat) and returns data
-# 4. The kernel sends the data back to the requesting process
-#
-# This is safer than kernel modules (bugs won't crash the system) and easier
-# to develop (normal debugging tools work).
-#
-# Learn more: https://docs.rs/fuser
-# FUSE overview: https://www.kernel.org/doc/html/latest/filesystems/fuse.html
-# -----------------------------------------------------------------------------
 fuser = "0.14"
-
-# -----------------------------------------------------------------------------
-# NIX - Unix System Calls
-# -----------------------------------------------------------------------------
-# `nix` provides safe Rust bindings to POSIX/Unix system calls. Instead of
-# using raw `libc` calls (which are unsafe), nix wraps them in safe Rust APIs.
-#
-# Features we enable:
-# - `mount`: For mounting/unmounting filesystems
-# - `signal`: For handling Unix signals (SIGTERM, SIGINT, etc.)
-# - `process`: For process-related operations (getpid, fork, etc.)
-#
-# Example: Instead of unsafe { libc::getpid() }, you write nix::unistd::getpid()
-#
-# Learn more: https://docs.rs/nix
-# -----------------------------------------------------------------------------
-nix = { version = "0.29", features = ["mount", "signal", "process"] }
-
-# -----------------------------------------------------------------------------
-# TOKIO - Async Runtime
-# -----------------------------------------------------------------------------
-# Tokio is the most popular async runtime for Rust. It provides:
-#
-# 1. ASYNC/AWAIT EXECUTION: Runs async functions efficiently
-# 2. I/O PRIMITIVES: Async file I/O, networking, timers
-# 3. SYNCHRONIZATION: Channels, mutexes, semaphores for async code
-# 4. TASK SCHEDULING: Efficiently multiplexes many tasks on few threads
-#
-# Why async for ObsFS?
-# - Multiple metric collectors can run concurrently
-# - Log streaming (tail -f) needs non-blocking I/O
-# - Better resource usage when handling many simultaneous reads
-#
-# The "full" feature enables all Tokio components. In production, you might
-# enable only what you need to reduce compile times.
-#
-# Learn more: https://tokio.rs/tokio/tutorial
-# -----------------------------------------------------------------------------
+nix = { version = "0.29", features = ["mount", "signal", "process", "user"] }
 tokio = { version = "1", features = ["full"] }
-
-# -----------------------------------------------------------------------------
-# SERDE - Serialization/Deserialization
-# -----------------------------------------------------------------------------
-# Serde is THE serialization framework for Rust. It converts Rust structs
-# to/from various formats (JSON, TOML, YAML, etc.).
-#
-# The "derive" feature enables #[derive(Serialize, Deserialize)] macros:
-#
-#   #[derive(Serialize, Deserialize)]
-#   struct Config {
-#       mount_path: String,
-#       cache_ttl: Duration,
-#   }
-#
-# This auto-generates code to convert Config to/from JSON, TOML, etc.
-#
-# Learn more: https://serde.rs
-# -----------------------------------------------------------------------------
 serde = { version = "1", features = ["derive"] }
-
-# -----------------------------------------------------------------------------
-# TOML - Configuration Format Parser
-# -----------------------------------------------------------------------------
-# TOML (Tom's Obvious Minimal Language) is a configuration file format.
-# It's more readable than JSON and less complex than YAML.
-#
-# Example TOML:
-#   [mount]
-#   path = "/obs"
-#
-#   [cache]
-#   default_ttl = "1s"
-#
-# We use TOML for ObsFS configuration files.
-#
-# Learn more: https://toml.io
-# -----------------------------------------------------------------------------
 toml = "0.8"
-
-# -----------------------------------------------------------------------------
-# CLAP - Command Line Argument Parser
-# -----------------------------------------------------------------------------
-# Clap is the most popular CLI parser for Rust. The "derive" feature enables
-# declarative CLI definition using attributes:
-#
-#   #[derive(Parser)]
-#   struct Cli {
-#       #[arg(short, long)]
-#       verbose: bool,
-#
-#       #[command(subcommand)]
-#       command: Commands,
-#   }
-#
-# Clap automatically generates:
-# - Help messages (--help)
-# - Error messages for invalid arguments
-# - Shell completions (bash, zsh, fish)
-#
-# Learn more: https://docs.rs/clap
-# -----------------------------------------------------------------------------
 clap = { version = "4", features = ["derive"] }
-
-# -----------------------------------------------------------------------------
-# TRACING - Structured Logging & Diagnostics
-# -----------------------------------------------------------------------------
-# `tracing` is a framework for instrumenting Rust programs to collect
-# structured, event-based diagnostic information.
-#
-# Unlike println! debugging, tracing provides:
-# - Log levels (trace, debug, info, warn, error)
-# - Structured data (key-value pairs, not just strings)
-# - Spans (track execution through async code)
-# - Configurable output (console, files, JSON, etc.)
-#
-# Example:
-#   tracing::info!(metric = "cpu.usage", value = 23.4, "Collected metric");
-#
-# Learn more: https://docs.rs/tracing
-# -----------------------------------------------------------------------------
 tracing = "0.1"
-
-# -----------------------------------------------------------------------------
-# TRACING-SUBSCRIBER - Tracing Output Configuration
-# -----------------------------------------------------------------------------
-# `tracing-subscriber` implements collectors that receive tracing events and
-# do something with them (print to console, write to file, etc.).
-#
-# Common setup:
-#   tracing_subscriber::fmt::init();  // Simple console output
-#
-# Or with more configuration:
-#   tracing_subscriber::fmt()
-#       .with_max_level(Level::DEBUG)
-#       .json()  // Output as JSON
-#       .init();
-#
-# Learn more: https://docs.rs/tracing-subscriber
-# -----------------------------------------------------------------------------
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-
-# -----------------------------------------------------------------------------
-# LIBC - Raw C Library Bindings
-# -----------------------------------------------------------------------------
-# `libc` provides raw FFI (Foreign Function Interface) bindings to the system's
-# C library. This is the lowest level of system interaction in Rust.
-#
-# We need it for:
-# - FUSE-specific system calls
-# - File attribute structures (stat, mode_t, etc.)
-# - Constants (O_RDONLY, S_IFREG, etc.)
-#
-# Usually you use higher-level wrappers (like nix), but sometimes you need
-# direct access to C types and constants.
-#
-# Learn more: https://docs.rs/libc
-# -----------------------------------------------------------------------------
 libc = "0.2"
-
-# -----------------------------------------------------------------------------
-# ANYHOW - Ergonomic Error Handling
-# -----------------------------------------------------------------------------
-# `anyhow` provides a flexible error type for application code. It's great for:
-# - Combining errors from different libraries (they all become anyhow::Error)
-# - Adding context to errors: .context("failed to read config")?
-# - Quick prototyping (no need to define custom error types)
-#
-# Use anyhow for APPLICATION code (binaries, top-level logic).
-# Use thiserror for LIBRARY code (when callers need to match on error types).
-#
-# Example:
-#   fn read_config() -> anyhow::Result<Config> {
-#       let contents = std::fs::read_to_string(path)
-#           .context("failed to read config file")?;
-#       Ok(toml::from_str(&contents)?)
-#   }
-#
-# Learn more: https://docs.rs/anyhow
-# -----------------------------------------------------------------------------
 anyhow = "1"
-
-# -----------------------------------------------------------------------------
-# THISERROR - Derive Macro for Error Types
-# -----------------------------------------------------------------------------
-# `thiserror` provides a derive macro to easily implement std::error::Error
-# for custom error types. It's the companion to anyhow.
-#
-# Example:
-#   #[derive(Debug, thiserror::Error)]
-#   enum CollectorError {
-#       #[error("failed to read {path}: {source}")]
-#       IoError { path: PathBuf, source: std::io::Error },
-#
-#       #[error("invalid metric value: {0}")]
-#       InvalidValue(String),
-#   }
-#
-# Learn more: https://docs.rs/thiserror
-# -----------------------------------------------------------------------------
 thiserror = "1"
-
-# -----------------------------------------------------------------------------
-# CHRONO - Date and Time
-# -----------------------------------------------------------------------------
-# `chrono` provides date and time handling. We need it for:
-# - Timestamps in JSON output
-# - Uptime formatting
-# - Cache expiration calculations
-#
-# Learn more: https://docs.rs/chrono
-# -----------------------------------------------------------------------------
 chrono = { version = "0.4", features = ["serde"] }
 
-# =============================================================================
-# WORKSPACE PACKAGE METADATA
-# =============================================================================
-# These values are inherited by member crates using:
-#   [package]
-#   edition.workspace = true
-#   license.workspace = true
-# =============================================================================
-
 [workspace.package]
-edition = "2021"          # Rust 2021 edition (latest stable)
-license = "MIT"           # Open source license
+edition = "2021"
+license = "MIT"
 repository = "https://github.com/Siedlarczyk/obsfs"
-rust-version = "1.75"     # Minimum supported Rust version (MSRV)
-
-# =============================================================================
-# RELEASE PROFILE
-# =============================================================================
-# Optimizations for smaller binary size. With these settings, the binary
-# shrinks from ~3.7MB to ~1.5-2MB.
-#
-# Trade-offs:
-# - Longer compile times (LTO + single codegen unit)
-# - Slightly slower in some edge cases (opt-level "z" vs "3")
-# =============================================================================
+rust-version = "1.75"
 
 [profile.release]
-opt-level = "z"       # Optimize for size (instead of speed)
-lto = true            # Link-time optimization (better dead code elimination)
-strip = true          # Remove symbols from binary
-codegen-units = 1     # Single codegen unit (better optimization, slower compile)
-panic = "abort"       # Smaller panic handling (no unwinding)
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"

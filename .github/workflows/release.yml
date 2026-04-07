@@ -10,8 +10,8 @@ permissions:
 
 jobs:
   build-x86:
-    name: Build x86_64
-    runs-on: ubuntu-22.04  # Use 22.04 for better compatibility
+    name: Build x86_64 (glibc)
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -28,9 +28,7 @@ jobs:
         run: |
           mkdir -p bundle/lib
           cp target/release/obsfs bundle/
-          # Copy required libraries
           cp /usr/lib/x86_64-linux-gnu/libfuse3.so.3* bundle/lib/
-          # Set RPATH to look for libs in ./lib
           patchelf --set-rpath '$ORIGIN/lib' bundle/obsfs
 
       - name: Package tar.gz
@@ -53,8 +51,41 @@ jobs:
             obsfs-*.tar.gz
             obsfs_*.deb
 
+  build-x86-musl:
+    name: Build x86_64 (musl/Alpine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build in Alpine container
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            alpine:3.19 \
+            sh -c "
+              apk add --no-cache curl build-base fuse3-dev fuse3-static pkgconf musl-dev &&
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable &&
+              source ~/.cargo/env &&
+              RUSTFLAGS='-C target-feature=-crt-static' cargo build --release --locked &&
+              strip target/release/obsfs
+            "
+
+      - name: Package tar.gz
+        run: |
+          mkdir -p bundle
+          cp target/release/obsfs bundle/
+          cd bundle
+          tar -czvf ../obsfs-${{ github.ref_name }}-x86_64-linux-musl.tar.gz obsfs
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: obsfs-x86_64-linux-musl
+          path: obsfs-*-musl.tar.gz
+
   build-arm64:
-    name: Build aarch64
+    name: Build aarch64 (glibc)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -100,9 +131,45 @@ jobs:
             obsfs-*.tar.gz
             obsfs_*.deb
 
+  build-arm64-musl:
+    name: Build aarch64 (musl/Alpine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build in Alpine ARM64 container
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            alpine:3.19 \
+            sh -c "
+              apk add --no-cache curl build-base fuse3-dev fuse3-static pkgconf musl-dev &&
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable &&
+              source ~/.cargo/env &&
+              RUSTFLAGS='-C target-feature=-crt-static' cargo build --release --locked &&
+              strip target/release/obsfs
+            "
+
+      - name: Package tar.gz
+        run: |
+          mkdir -p bundle
+          cp target/release/obsfs bundle/
+          cd bundle
+          tar -czvf ../obsfs-${{ github.ref_name }}-aarch64-linux-musl.tar.gz obsfs
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: obsfs-aarch64-linux-musl
+          path: obsfs-*-musl.tar.gz
+
   release:
     name: Create Release
-    needs: [build-x86, build-arm64]
+    needs: [build-x86, build-x86-musl, build-arm64, build-arm64-musl]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

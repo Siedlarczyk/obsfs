@@ -2,16 +2,19 @@
 
 mod banner;
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
-use obsfs_core::{Config, LogFormat, LogOutput, LoggingConfig, Registry};
+use obsfs_core::{
+    Config, LogFormat, LogOutput, LoggingConfig, MetricProvider, MetricValue, Registry,
+};
 use obsfs_fuse::ObsFs;
 use obsfs_plugins::{
     ConnectionsPlugin, DockerPlugin, HealthPlugin, Plugin, ProcSysPlugin, ProcessInfoPlugin,
@@ -122,12 +125,7 @@ fn init_logging(config: &LoggingConfig) {
     match &config.output {
         LogOutput::Stdout => init_logging_to_stdout(config, filter),
         LogOutput::Stderr => init_logging_to_stderr(config, filter),
-        LogOutput::File(path) => {
-            // TODO: Use tracing-appender for file logging
-            eprintln!("Warning: file logging not yet implemented, using stderr");
-            eprintln!("Requested log file: {:?}", path);
-            init_logging_to_stderr(config, filter);
-        }
+        LogOutput::File(path) => init_logging_to_file(config, filter, path),
     }
 }
 
@@ -166,6 +164,56 @@ fn init_logging_to_stdout(config: &LoggingConfig, filter: EnvFilter) {
     }
 }
 
+// =============================================================================
+// PLUGIN STATUS PROVIDER
+// =============================================================================
+
+/// Tracks and provides plugin registration status.
+struct PluginStatusProvider {
+    statuses: Arc<Mutex<HashMap<String, PluginStatus>>>,
+}
+
+#[derive(Clone, Debug)]
+struct PluginStatus {
+    success: bool,
+    error: Option<String>,
+}
+
+impl PluginStatusProvider {
+    fn new(statuses: Arc<Mutex<HashMap<String, PluginStatus>>>) -> Self {
+        Self { statuses }
+    }
+}
+
+impl MetricProvider for PluginStatusProvider {
+    fn path(&self) -> &str {
+        "_meta/plugins"
+    }
+
+    fn collect(&self) -> Result<MetricValue, anyhow::Error> {
+        let statuses = self.statuses.lock().unwrap();
+
+        let mut output = String::new();
+
+        // Sort by plugin name for consistent output
+        let mut plugins: Vec<_> = statuses.iter().collect();
+        plugins.sort_by_key(|(name, _)| *name);
+
+        for (name, status) in plugins {
+            if status.success {
+                output.push_str(&format!("{}: ok\n", name));
+            } else {
+                match &status.error {
+                    Some(error) => output.push_str(&format!("{}: failed ({})\n", name, error)),
+                    None => output.push_str(&format!("{}: failed\n", name)),
+                }
+            }
+        }
+
+        Ok(MetricValue::Text(output))
+    }
+}
+
 fn init_logging_to_stderr(config: &LoggingConfig, filter: EnvFilter) {
     match config.format {
         LogFormat::Json => {
@@ -193,6 +241,57 @@ fn init_logging_to_stderr(config: &LoggingConfig, filter: EnvFilter) {
                 .with_target(config.show_target)
                 .with_file(config.show_location)
                 .with_line_number(config.show_location)
+                .init();
+        }
+    }
+}
+
+fn init_logging_to_file(config: &LoggingConfig, filter: EnvFilter, path: &std::path::Path) {
+    // Create parent directory if it doesn't exist
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    // Setup daily rolling file appender
+    let file_appender = tracing_appender::rolling::daily(
+        path.parent().unwrap_or_else(|| std::path::Path::new(".")),
+        path.file_name().unwrap_or_default(),
+    );
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    // Store the guard to prevent the worker thread from being dropped
+    // This guard will be kept alive for the lifetime of the program
+    let _guard = Box::leak(Box::new(_guard));
+
+    match config.format {
+        LogFormat::Json => {
+            tracing_subscriber::fmt()
+                .json()
+                .with_env_filter(filter)
+                .with_target(config.show_target)
+                .with_file(config.show_location)
+                .with_line_number(config.show_location)
+                .with_writer(non_blocking)
+                .init();
+        }
+        LogFormat::Pretty => {
+            tracing_subscriber::fmt()
+                .pretty()
+                .with_env_filter(filter)
+                .with_target(config.show_target)
+                .with_file(config.show_location)
+                .with_line_number(config.show_location)
+                .with_writer(non_blocking)
+                .init();
+        }
+        LogFormat::Compact => {
+            tracing_subscriber::fmt()
+                .compact()
+                .with_env_filter(filter)
+                .with_target(config.show_target)
+                .with_file(config.show_location)
+                .with_line_number(config.show_location)
+                .with_writer(non_blocking)
                 .init();
         }
     }
@@ -265,20 +364,44 @@ fn cmd_mount(
         Box::new(DockerPlugin::new()),
     ];
 
-    // Register static providers from all plugins
+    // Track plugin registration status for /_meta/plugins endpoint
+    let plugin_statuses: Arc<Mutex<HashMap<String, PluginStatus>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
+    // Register static providers from all plugins (continue on failure)
     for plugin in &plugins {
         let result = plugin.register(&mut registry);
         match &result {
             Ok(_) => {
                 banner.print_status(plugin.name(), true);
                 tracing::info!(plugin = plugin.name(), "Registered plugin");
+                plugin_statuses.lock().unwrap().insert(
+                    plugin.name().to_string(),
+                    PluginStatus {
+                        success: true,
+                        error: None,
+                    },
+                );
             }
             Err(e) => {
                 banner.print_status(plugin.name(), false);
-                tracing::error!(plugin = plugin.name(), error = %e, "Failed to register plugin");
+                let error_msg = format!("{:#}", e);
+                tracing::warn!(plugin = plugin.name(), error = %error_msg, "Plugin failed to register, continuing without it");
+                plugin_statuses.lock().unwrap().insert(
+                    plugin.name().to_string(),
+                    PluginStatus {
+                        success: false,
+                        error: Some(error_msg),
+                    },
+                );
             }
         }
-        result.with_context(|| format!("failed to register plugin '{}'", plugin.name()))?;
+    }
+
+    // Register the plugin status provider
+    let status_provider = PluginStatusProvider::new(plugin_statuses.clone());
+    if let Err(e) = registry.insert_provider(Arc::new(status_provider)) {
+        tracing::warn!("Failed to register plugin status provider: {}", e);
     }
 
     let mut fs = ObsFs::new(registry);
@@ -305,11 +428,28 @@ fn cmd_mount(
         options.push(fuser::MountOption::AllowOther);
     }
 
+    // Write PID file BEFORE daemonizing (while we still have stdio)
     if daemon {
-        tracing::info!("Daemon mode requested (not yet implemented - running in foreground)");
+        let pid = std::process::id();
+        let pid_file = "/var/run/obsfs.pid";
+        if let Err(e) = std::fs::write(pid_file, pid.to_string()) {
+            tracing::warn!("Failed to write PID file {}: {}", pid_file, e);
+            eprintln!("Warning: failed to write PID file {}: {}", pid_file, e);
+        }
     }
 
     tracing::info!(?path, "Mounting ObsFS");
+
+    // Daemonize AFTER logging is set up and BEFORE mounting FUSE
+    if daemon {
+        let pid = std::process::id();
+        tracing::info!("Daemonizing with PID {}", pid);
+
+        // Daemonize the process: chdir to / and redirect stdio to /dev/null
+        nix::unistd::daemon(false, false).context("failed to daemonize")?;
+
+        tracing::info!("Successfully daemonized");
+    }
 
     let session = fuser::spawn_mount2(fs, &path, &options)
         .with_context(|| format!("failed to mount filesystem at {:?}", path))?;
@@ -318,13 +458,26 @@ fn cmd_mount(
     banner.print_ready();
 
     let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
+    let daemon_mode = daemon;
 
-    ctrlc::set_handler(move || {
-        banner::print_shutdown();
-        r.store(false, Ordering::SeqCst);
-    })
-    .context("failed to set signal handler")?;
+    // Register SIGINT (Ctrl+C) for graceful shutdown
+    let r = running.clone();
+    unsafe {
+        signal_hook::low_level::register(signal_hook::consts::SIGINT, move || {
+            if !daemon_mode {
+                banner::print_shutdown();
+            }
+            r.store(false, Ordering::SeqCst);
+        })?;
+    }
+
+    // Register SIGTERM (kill) for graceful shutdown
+    let r = running.clone();
+    unsafe {
+        signal_hook::low_level::register(signal_hook::consts::SIGTERM, move || {
+            r.store(false, Ordering::SeqCst);
+        })?;
+    }
 
     while running.load(Ordering::SeqCst) {
         std::thread::sleep(std::time::Duration::from_millis(100));

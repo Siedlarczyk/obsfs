@@ -6,9 +6,10 @@
 //! Usage: `cat /obs/health`
 
 use std::fs;
+use std::mem::MaybeUninit;
 
 use anyhow::Result;
-use obsfs_core::{MetricProvider, MetricValue, Plugin, Registry};
+use obsfs_core::{format_bytes, MetricProvider, MetricValue, Plugin, Registry};
 use std::sync::Arc;
 
 // =============================================================================
@@ -92,7 +93,6 @@ struct CheckResult {
 // HEALTH PROVIDER
 // =============================================================================
 
-/// Provides overall system health status with warnings and critical alerts.
 pub struct HealthProvider {
     proc_path: String,
     thresholds: Thresholds,
@@ -203,8 +203,8 @@ impl HealthProvider {
         let line = format!(
             "memory:   {:.0}% ({} / {}){}",
             percent,
-            Self::format_bytes(used_kb * 1024),
-            Self::format_bytes(total_kb * 1024),
+            format_bytes(used_kb * 1024),
+            format_bytes(total_kb * 1024),
             status.marker()
         );
 
@@ -212,7 +212,7 @@ impl HealthProvider {
             Some(format!(
                 "memory: {:.0}% used, only {} available",
                 percent,
-                Self::format_bytes(available_kb * 1024)
+                format_bytes(available_kb * 1024)
             ))
         } else {
             None
@@ -260,15 +260,15 @@ impl HealthProvider {
         let line = format!(
             "swap:     {:.0}% ({} / {}){}",
             percent,
-            Self::format_bytes(used_kb * 1024),
-            Self::format_bytes(total_kb * 1024),
+            format_bytes(used_kb * 1024),
+            format_bytes(total_kb * 1024),
             status.marker()
         );
 
         let issue = if status != Status::Ok {
             Some(format!(
                 "swap: actively using swap ({})",
-                Self::format_bytes(used_kb * 1024)
+                format_bytes(used_kb * 1024)
             ))
         } else {
             None
@@ -286,8 +286,8 @@ impl HealthProvider {
         // Use statvfs to get disk information
         let path = std::ffi::CString::new("/").unwrap();
 
-        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
-        let result = unsafe { libc::statvfs(path.as_ptr(), &mut stat) };
+        let mut stat: MaybeUninit<libc::statvfs> = MaybeUninit::uninit();
+        let result = unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) };
 
         if result != 0 {
             return CheckResult {
@@ -297,6 +297,7 @@ impl HealthProvider {
             };
         }
 
+        let stat = unsafe { stat.assume_init() };
         let block_size = stat.f_frsize as u64;
         let total = stat.f_blocks as u64 * block_size;
         let available = stat.f_bavail as u64 * block_size;
@@ -319,8 +320,8 @@ impl HealthProvider {
         let line = format!(
             "disk /:   {:.0}% ({} / {}){}",
             percent,
-            Self::format_bytes(used),
-            Self::format_bytes(total),
+            format_bytes(used),
+            format_bytes(total),
             status.marker()
         );
 
@@ -328,7 +329,7 @@ impl HealthProvider {
             Some(format!(
                 "disk /: {:.0}% used, only {} available",
                 percent,
-                Self::format_bytes(available)
+                format_bytes(available)
             ))
         } else {
             None
@@ -341,32 +342,11 @@ impl HealthProvider {
         }
     }
 
-    /// Parse numeric value from meminfo line (e.g., "MemTotal:       16384000 kB")
     fn parse_meminfo_value(line: &str) -> u64 {
         line.split_whitespace()
             .nth(1)
             .and_then(|v| v.parse().ok())
             .unwrap_or(0)
-    }
-
-    /// Format bytes into human-readable string
-    fn format_bytes(bytes: u64) -> String {
-        const KB: u64 = 1024;
-        const MB: u64 = KB * 1024;
-        const GB: u64 = MB * 1024;
-        const TB: u64 = GB * 1024;
-
-        if bytes >= TB {
-            format!("{:.1}TB", bytes as f64 / TB as f64)
-        } else if bytes >= GB {
-            format!("{:.1}GB", bytes as f64 / GB as f64)
-        } else if bytes >= MB {
-            format!("{:.0}MB", bytes as f64 / MB as f64)
-        } else if bytes >= KB {
-            format!("{:.0}KB", bytes as f64 / KB as f64)
-        } else {
-            format!("{}B", bytes)
-        }
     }
 }
 
@@ -562,14 +542,5 @@ mod tests {
         } else {
             panic!("Expected Text");
         }
-    }
-
-    #[test]
-    fn test_format_bytes() {
-        assert_eq!(HealthProvider::format_bytes(500), "500B");
-        assert_eq!(HealthProvider::format_bytes(1024), "1KB");
-        assert_eq!(HealthProvider::format_bytes(1536 * 1024), "2MB");
-        assert_eq!(HealthProvider::format_bytes(1_500_000_000), "1.4GB");
-        assert_eq!(HealthProvider::format_bytes(2_000_000_000_000), "1.8TB");
     }
 }

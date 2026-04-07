@@ -7,7 +7,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use anyhow::Result;
-use obsfs_core::{DynamicHandler, Plugin, Registry};
+use obsfs_core::{format_bytes, DynamicHandler, Plugin, Registry};
 
 // =============================================================================
 // SERVICE INFO
@@ -131,7 +131,7 @@ impl ServiceInfoProvider {
         if info.memory_bytes > 0 {
             out.push_str(&format!(
                 "Memory:      {}\n",
-                Self::format_bytes(info.memory_bytes)
+                format_bytes(info.memory_bytes)
             ));
         }
 
@@ -147,22 +147,6 @@ impl ServiceInfoProvider {
         out.push_str(&format!("Description: {}\n", info.description));
 
         out
-    }
-
-    fn format_bytes(bytes: u64) -> String {
-        const KB: u64 = 1024;
-        const MB: u64 = KB * 1024;
-        const GB: u64 = MB * 1024;
-
-        if bytes >= GB {
-            format!("{:.1}GB", bytes as f64 / GB as f64)
-        } else if bytes >= MB {
-            format!("{:.1}MB", bytes as f64 / MB as f64)
-        } else if bytes >= KB {
-            format!("{}KB", bytes / KB)
-        } else {
-            format!("{}B", bytes)
-        }
     }
 }
 
@@ -257,14 +241,6 @@ impl Default for ServicesPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_bytes() {
-        assert_eq!(ServiceInfoProvider::format_bytes(500), "500B");
-        assert_eq!(ServiceInfoProvider::format_bytes(2048), "2KB");
-        assert_eq!(ServiceInfoProvider::format_bytes(1_500_000), "1.4MB");
-        assert_eq!(ServiceInfoProvider::format_bytes(2_500_000_000), "2.3GB");
-    }
 
     #[test]
     fn test_plugin_metadata() {

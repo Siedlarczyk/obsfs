@@ -10,19 +10,16 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// Creates a new empty registry.
     pub fn new() -> Self {
         Self {
             root: FsNode::new_directory(),
         }
     }
 
-    /// Returns a reference to the root node.
     pub fn root(&self) -> &FsNode {
         &self.root
     }
 
-    /// Returns a mutable reference to the root node.
     pub fn root_mut(&mut self) -> &mut FsNode {
         &mut self.root
     }
@@ -122,7 +119,6 @@ impl Registry {
         Some(current)
     }
 
-    /// Lists the children of a directory.
     pub fn list_children(&self, path: &str) -> Option<Vec<String>> {
         let node = self.get(path)?;
 
@@ -132,12 +128,10 @@ impl Registry {
         }
     }
 
-    /// Checks if a path exists in the registry.
     pub fn exists(&self, path: &str) -> bool {
         self.get(path).is_some()
     }
 
-    /// Removes a node from the registry.
     pub fn remove(&mut self, path: &str) -> Option<FsNode> {
         if path.is_empty() {
             return None;

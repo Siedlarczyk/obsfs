@@ -90,7 +90,6 @@ fn parse_diskstats(proc_path: &str, device: &str) -> anyhow::Result<DiskStats> {
     Err(anyhow::anyhow!("device {} not found in diskstats", device))
 }
 
-/// Provides bytes read for a disk device.
 #[derive(Debug)]
 pub struct DiskReadBytesProvider {
     proc_path: String,
@@ -119,7 +118,6 @@ impl MetricProvider for DiskReadBytesProvider {
     }
 }
 
-/// Provides bytes written for a disk device.
 #[derive(Debug)]
 pub struct DiskWriteBytesProvider {
     proc_path: String,
@@ -148,7 +146,6 @@ impl MetricProvider for DiskWriteBytesProvider {
     }
 }
 
-/// Provides read IOPS (completed reads) for a disk device.
 #[derive(Debug)]
 pub struct DiskReadIopsProvider {
     proc_path: String,
@@ -177,7 +174,6 @@ impl MetricProvider for DiskReadIopsProvider {
     }
 }
 
-/// Provides write IOPS (completed writes) for a disk device.
 #[derive(Debug)]
 pub struct DiskWriteIopsProvider {
     proc_path: String,

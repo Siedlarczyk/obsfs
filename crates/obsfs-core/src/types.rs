@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
 
 /// Represents the value returned by a metric collector.
 #[derive(Debug)]
@@ -17,24 +16,17 @@ pub enum MetricValue {
 
     /// A text value (e.g., status, last log line).
     Text(String),
-
-    /// A channel receiver for streaming values (tail -f).
-    #[allow(dead_code)]
-    Stream(broadcast::Receiver<String>),
 }
 
 impl MetricValue {
-    /// Converts the metric value to plain text.
     pub fn to_plain(&self) -> String {
         match self {
             MetricValue::Gauge(v) => format!("{:.2}", v),
             MetricValue::Counter(v) => v.to_string(),
             MetricValue::Text(s) => s.clone(),
-            MetricValue::Stream(_) => "[stream]".to_string(),
         }
     }
 
-    /// Converts the metric value to JSON format.
     pub fn to_json(&self) -> String {
         let timestamp = chrono::Utc::now().to_rfc3339();
 
@@ -58,12 +50,6 @@ impl MetricValue {
                     escaped, timestamp
                 )
             }
-            MetricValue::Stream(_) => {
-                format!(
-                    r#"{{"value":null,"type":"stream","timestamp":"{}"}}"#,
-                    timestamp
-                )
-            }
         }
     }
 }
@@ -78,7 +64,6 @@ pub enum OutputFormat {
 }
 
 impl OutputFormat {
-    /// Parses a string into an OutputFormat.
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_lowercase().as_str() {
             "plain" => Some(OutputFormat::Plain),
@@ -105,16 +90,6 @@ pub trait MetricProvider: Send + Sync {
 
     /// Collects and returns the current metric value.
     fn collect(&self) -> anyhow::Result<MetricValue>;
-
-    /// Returns whether this metric supports streaming (tail -f).
-    fn supports_stream(&self) -> bool {
-        false
-    }
-
-    /// Returns a receiver for streaming values.
-    fn stream(&self) -> Option<broadcast::Receiver<String>> {
-        None
-    }
 }
 
 /// Represents a node in the virtual filesystem tree.
@@ -133,19 +108,16 @@ pub enum FsNode {
 }
 
 impl FsNode {
-    /// Creates a new empty directory.
     pub fn new_directory() -> Self {
         FsNode::Directory {
             children: HashMap::new(),
         }
     }
 
-    /// Creates a new metric node.
     pub fn new_metric(provider: Arc<dyn MetricProvider>) -> Self {
         FsNode::Metric { provider }
     }
 
-    /// Creates a new config node with a change callback.
     pub fn new_config<F>(initial_value: String, on_change: F) -> Self
     where
         F: Fn(&str) + Send + Sync + 'static,
@@ -262,8 +234,6 @@ pub trait DynamicHandler: Send + Sync {
     /// For example, for path "proc/1234", subpath would be "1234".
     fn exists(&self, subpath: &str) -> bool;
 
-    /// Reads the content for a subpath.
-    ///
     /// Returns None if the path doesn't exist or can't be read.
     fn read(&self, subpath: &str) -> Option<String>;
 }

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime};
 
 /// The inode number for the root directory.
 pub const ROOT_INODE: u64 = 1;
@@ -12,15 +13,20 @@ const FIRST_ALLOCATABLE_INODE: u64 = 2;
 ///
 /// FUSE operations use inodes, but our registry uses paths. This table
 /// provides O(1) translation in both directions.
+///
+/// Supports soft-delete with periodic sweep to handle dynamic paths without
+/// memory leaks. Stale inodes are marked but not immediately removed, then
+/// swept periodically based on age.
 #[derive(Debug)]
 pub struct InodeTable {
     path_to_inode: HashMap<String, u64>,
     inode_to_path: HashMap<u64, String>,
     next_inode: AtomicU64,
+    /// Tracks inodes marked as stale with their timestamp
+    stale: HashMap<u64, SystemTime>,
 }
 
 impl InodeTable {
-    /// Creates a new inode table with the root directory pre-registered.
     pub fn new() -> Self {
         let mut path_to_inode = HashMap::new();
         let mut inode_to_path = HashMap::new();
@@ -32,10 +38,10 @@ impl InodeTable {
             path_to_inode,
             inode_to_path,
             next_inode: AtomicU64::new(FIRST_ALLOCATABLE_INODE),
+            stale: HashMap::new(),
         }
     }
 
-    /// Allocates a new inode for the given path, or returns existing one.
     pub fn allocate(&mut self, path: &str) -> u64 {
         if let Some(&inode) = self.path_to_inode.get(path) {
             return inode;
@@ -49,32 +55,31 @@ impl InodeTable {
         inode
     }
 
-    /// Returns the path for a given inode number.
+    /// Returns None if the inode doesn't exist or is stale.
     pub fn resolve_path(&self, inode: u64) -> Option<&str> {
+        // Stale inodes should appear as if they don't exist
+        if self.is_stale(inode) {
+            return None;
+        }
         self.inode_to_path.get(&inode).map(|s| s.as_str())
     }
 
-    /// Returns the inode for a given path.
     pub fn resolve_inode(&self, path: &str) -> Option<u64> {
         self.path_to_inode.get(path).copied()
     }
 
-    /// Checks if an inode is registered.
     pub fn contains_inode(&self, inode: u64) -> bool {
         self.inode_to_path.contains_key(&inode)
     }
 
-    /// Checks if a path is registered.
     pub fn contains_path(&self, path: &str) -> bool {
         self.path_to_inode.contains_key(path)
     }
 
-    /// Returns the number of registered paths (including root).
     pub fn len(&self) -> usize {
         self.path_to_inode.len()
     }
 
-    /// Returns `true` if only the root is registered.
     pub fn is_empty(&self) -> bool {
         self.len() == 1
     }
@@ -93,6 +98,57 @@ impl InodeTable {
     pub fn get_or_allocate(&mut self, path: &str) -> u64 {
         self.resolve_inode(path)
             .unwrap_or_else(|| self.allocate(path))
+    }
+
+    /// Marks an inode as stale. Operations on stale inodes will return ENOENT.
+    ///
+    /// This is used for soft-delete - the inode is not immediately removed,
+    /// but marked for later cleanup via `sweep_stale()`.
+    pub fn mark_stale(&mut self, inode: u64) {
+        if inode == ROOT_INODE {
+            // Never mark root as stale
+            return;
+        }
+        self.stale.insert(inode, SystemTime::now());
+    }
+
+    pub fn is_stale(&self, inode: u64) -> bool {
+        self.stale.contains_key(&inode)
+    }
+
+    /// Sweeps stale inodes older than `max_age` and removes them completely.
+    ///
+    /// This is typically called periodically (e.g., every few seconds) to
+    /// clean up inodes that have been marked as stale for a sufficient time.
+    ///
+    /// Returns the number of inodes removed.
+    pub fn sweep_stale(&mut self, max_age: Duration) -> usize {
+        let now = SystemTime::now();
+        let mut to_remove = Vec::new();
+
+        // Find inodes that are old enough to remove
+        for (&inode, &marked_time) in self.stale.iter() {
+            if let Ok(age) = now.duration_since(marked_time) {
+                if age >= max_age {
+                    to_remove.push(inode);
+                }
+            }
+        }
+
+        // Remove the old stale entries
+        let removed_count = to_remove.len();
+        for inode in to_remove {
+            self.stale.remove(&inode);
+            if let Some(path) = self.inode_to_path.remove(&inode) {
+                self.path_to_inode.remove(&path);
+            }
+        }
+
+        removed_count
+    }
+
+    pub fn stale_count(&self) -> usize {
+        self.stale.len()
     }
 }
 
@@ -175,5 +231,62 @@ mod tests {
     fn test_split_path() {
         assert_eq!(split_path("child"), ("", "child"));
         assert_eq!(split_path("parent/child"), ("parent", "child"));
+    }
+
+    #[test]
+    fn test_mark_stale() {
+        let mut table = InodeTable::new();
+        let inode = table.allocate("test");
+
+        assert!(!table.is_stale(inode));
+        table.mark_stale(inode);
+        assert!(table.is_stale(inode));
+    }
+
+    #[test]
+    fn test_root_cannot_be_stale() {
+        let mut table = InodeTable::new();
+        table.mark_stale(ROOT_INODE);
+        assert!(!table.is_stale(ROOT_INODE));
+    }
+
+    #[test]
+    fn test_sweep_stale() {
+        let mut table = InodeTable::new();
+        let inode1 = table.allocate("path1");
+        let inode2 = table.allocate("path2");
+
+        table.mark_stale(inode1);
+        table.mark_stale(inode2);
+        assert_eq!(table.stale_count(), 2);
+
+        // Sweep with very short max_age - should remove both
+        let removed = table.sweep_stale(Duration::from_secs(0));
+        assert_eq!(removed, 2);
+        assert_eq!(table.stale_count(), 0);
+
+        // Both inodes should be removed from the table
+        assert!(!table.contains_inode(inode1));
+        assert!(!table.contains_inode(inode2));
+    }
+
+    #[test]
+    fn test_sweep_respects_max_age() {
+        use std::thread;
+
+        let mut table = InodeTable::new();
+        let inode = table.allocate("old_path");
+        table.mark_stale(inode);
+
+        // Sweep with a long max_age - should not remove yet
+        let removed = table.sweep_stale(Duration::from_secs(10));
+        assert_eq!(removed, 0);
+        assert!(table.is_stale(inode));
+
+        // Sleep a tiny bit and try again with a very short max_age
+        thread::sleep(Duration::from_millis(10));
+        let removed = table.sweep_stale(Duration::from_millis(5));
+        assert_eq!(removed, 1);
+        assert!(!table.is_stale(inode));
     }
 }

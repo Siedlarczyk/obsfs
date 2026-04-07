@@ -32,28 +32,16 @@ use crate::{DynamicHandler, Registry};
 /// Plugins are the primary way to extend ObsFS with new metrics and handlers.
 /// Each plugin can register static metric providers and/or dynamic handlers.
 pub trait Plugin: Send + Sync {
-    /// Returns the unique name of this plugin.
-    ///
-    /// Used for logging and identification.
     fn name(&self) -> &str;
 
-    /// Returns a human-readable description of what this plugin provides.
     fn description(&self) -> &str {
         ""
     }
 
-    /// Registers static metric providers with the registry.
-    ///
-    /// This is called once during startup to register all metrics
-    /// that this plugin provides.
+    /// Called once during startup to register metrics from this plugin.
     fn register(&self, registry: &mut Registry) -> anyhow::Result<()>;
 
-    /// Returns dynamic handlers provided by this plugin.
-    ///
-    /// Dynamic handlers respond to paths that aren't statically registered,
-    /// like `/obs/proc/[pid]` where entries are determined at runtime.
-    ///
-    /// Returns an empty vector by default.
+    /// Returns dynamic handlers for runtime-determined paths like `/obs/proc/[pid]`.
     fn dynamic_handlers(&self) -> Vec<Arc<dyn DynamicHandler>> {
         vec![]
     }

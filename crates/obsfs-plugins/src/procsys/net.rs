@@ -67,7 +67,6 @@ fn parse_netdev(proc_path: &str, interface: &str) -> anyhow::Result<NetStats> {
     Err(anyhow::anyhow!("interface {} not found", interface))
 }
 
-/// Provides received bytes for a network interface.
 #[derive(Debug)]
 pub struct NetRxBytesProvider {
     proc_path: String,
@@ -96,7 +95,6 @@ impl MetricProvider for NetRxBytesProvider {
     }
 }
 
-/// Provides transmitted bytes for a network interface.
 #[derive(Debug)]
 pub struct NetTxBytesProvider {
     proc_path: String,
@@ -125,7 +123,6 @@ impl MetricProvider for NetTxBytesProvider {
     }
 }
 
-/// Provides received packets for a network interface.
 #[derive(Debug)]
 pub struct NetRxPacketsProvider {
     proc_path: String,
@@ -154,7 +151,6 @@ impl MetricProvider for NetRxPacketsProvider {
     }
 }
 
-/// Provides transmitted packets for a network interface.
 #[derive(Debug)]
 pub struct NetTxPacketsProvider {
     proc_path: String,

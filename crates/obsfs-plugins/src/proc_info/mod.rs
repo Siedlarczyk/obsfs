@@ -7,7 +7,7 @@ use std::fs;
 use std::sync::Arc;
 
 use anyhow::Result;
-use obsfs_core::{DynamicHandler, Plugin, Registry};
+use obsfs_core::{format_bytes, DynamicHandler, Plugin, Registry};
 
 // =============================================================================
 // PROCESS INFO
@@ -102,14 +102,12 @@ impl ProcessInfoProvider {
         Ok(self.format_output(&info))
     }
 
-    /// Read process name from /proc/[pid]/comm
     fn read_comm(&self, proc_dir: &str, info: &mut ProcessInfo) {
         if let Ok(comm) = fs::read_to_string(format!("{}/comm", proc_dir)) {
             info.name = comm.trim().to_string();
         }
     }
 
-    /// Read information from /proc/[pid]/status
     fn read_status(&self, proc_dir: &str, info: &mut ProcessInfo) {
         if let Ok(content) = fs::read_to_string(format!("{}/status", proc_dir)) {
             for line in content.lines() {
@@ -153,7 +151,6 @@ impl ProcessInfoProvider {
         info.username = self.uid_to_username(info.uid);
     }
 
-    /// Read information from /proc/[pid]/stat
     fn read_stat(&self, proc_dir: &str, info: &mut ProcessInfo) {
         if let Ok(content) = fs::read_to_string(format!("{}/stat", proc_dir)) {
             // Format: pid (comm) state ppid pgrp session tty_nr tpgid flags
@@ -176,7 +173,6 @@ impl ProcessInfoProvider {
         }
     }
 
-    /// Read full command line from /proc/[pid]/cmdline
     fn read_cmdline(&self, proc_dir: &str, info: &mut ProcessInfo) {
         if let Ok(content) = fs::read_to_string(format!("{}/cmdline", proc_dir)) {
             // cmdline uses \0 as separator
@@ -187,21 +183,18 @@ impl ProcessInfoProvider {
         }
     }
 
-    /// Read working directory from /proc/[pid]/cwd
     fn read_cwd(&self, proc_dir: &str, info: &mut ProcessInfo) {
         if let Ok(cwd) = fs::read_link(format!("{}/cwd", proc_dir)) {
             info.cwd = cwd.to_string_lossy().to_string();
         }
     }
 
-    /// Count file descriptors in /proc/[pid]/fd
     fn read_fd_count(&self, proc_dir: &str, info: &mut ProcessInfo) {
         if let Ok(entries) = fs::read_dir(format!("{}/fd", proc_dir)) {
             info.fd_count = entries.count() as u32;
         }
     }
 
-    /// Read limits from /proc/[pid]/limits
     fn read_limits(&self, proc_dir: &str, info: &mut ProcessInfo) {
         if let Ok(content) = fs::read_to_string(format!("{}/limits", proc_dir)) {
             for line in content.lines() {
@@ -216,7 +209,6 @@ impl ProcessInfoProvider {
         }
     }
 
-    /// Read system uptime
     fn read_uptime(&self, info: &mut ProcessInfo) {
         if let Ok(content) = fs::read_to_string(format!("{}/uptime", self.proc_path)) {
             if let Some(uptime_str) = content.split_whitespace().next() {
@@ -225,7 +217,6 @@ impl ProcessInfoProvider {
         }
     }
 
-    /// Read network information for the process
     fn read_network_info(&self, proc_dir: &str, info: &mut ProcessInfo) {
         // Read socket inodes for this process
         let mut socket_inodes: Vec<u64> = Vec::new();
@@ -280,7 +271,6 @@ impl ProcessInfoProvider {
         }
     }
 
-    /// Convert UID to username by reading /etc/passwd
     fn uid_to_username(&self, uid: u32) -> String {
         // Try to read /etc/passwd
         if let Ok(content) = fs::read_to_string("/etc/passwd") {
@@ -298,7 +288,6 @@ impl ProcessInfoProvider {
         format!("uid:{}", uid)
     }
 
-    /// Parse numeric value from status file line
     fn parse_status_value<T: std::str::FromStr + Default>(line: &str) -> T {
         line.split_whitespace()
             .nth(1)
@@ -306,7 +295,6 @@ impl ProcessInfoProvider {
             .unwrap_or_default()
     }
 
-    /// Format the final output string
     fn format_output(&self, info: &ProcessInfo) -> String {
         let mut out = String::new();
 
@@ -339,8 +327,8 @@ impl ProcessInfoProvider {
         ));
         out.push_str(&format!(
             "Memory:      {} RSS / {} Virtual\n",
-            Self::format_bytes(info.rss_bytes),
-            Self::format_bytes(info.vsize_bytes)
+            format_bytes(info.rss_bytes),
+            format_bytes(info.vsize_bytes)
         ));
         out.push_str(&format!("Threads:     {}\n", info.threads));
         out.push('\n');
@@ -383,7 +371,6 @@ impl ProcessInfoProvider {
         out
     }
 
-    /// Format process uptime
     fn format_process_uptime(&self, info: &ProcessInfo) -> String {
         // start_time is in clock ticks since boot
         // Convert to seconds
@@ -395,7 +382,6 @@ impl ProcessInfoProvider {
         Self::format_duration(running_secs)
     }
 
-    /// Format duration in human-readable format
     fn format_duration(secs: u64) -> String {
         let days = secs / 86400;
         let hours = (secs % 86400) / 3600;
@@ -410,28 +396,10 @@ impl ProcessInfoProvider {
         }
     }
 
-    /// Format CPU ticks in human-readable format
     fn format_ticks(ticks: u64) -> String {
         let ticks_per_sec = 100u64;
         let secs = ticks / ticks_per_sec;
         Self::format_duration(secs)
-    }
-
-    /// Format bytes in human-readable format
-    fn format_bytes(bytes: u64) -> String {
-        const KB: u64 = 1024;
-        const MB: u64 = KB * 1024;
-        const GB: u64 = MB * 1024;
-
-        if bytes >= GB {
-            format!("{:.1}GB", bytes as f64 / GB as f64)
-        } else if bytes >= MB {
-            format!("{:.1}MB", bytes as f64 / MB as f64)
-        } else if bytes >= KB {
-            format!("{}KB", bytes / KB)
-        } else {
-            format!("{}B", bytes)
-        }
     }
 
     /// List all active PIDs for dynamic directory listing
@@ -547,14 +515,6 @@ impl Default for ProcessInfoPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_bytes() {
-        assert_eq!(ProcessInfoProvider::format_bytes(500), "500B");
-        assert_eq!(ProcessInfoProvider::format_bytes(2048), "2KB");
-        assert_eq!(ProcessInfoProvider::format_bytes(1_500_000), "1.4MB");
-        assert_eq!(ProcessInfoProvider::format_bytes(2_500_000_000), "2.3GB");
-    }
 
     #[test]
     fn test_format_duration() {

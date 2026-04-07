@@ -104,7 +104,6 @@ pub enum LogLevel {
 }
 
 impl LogLevel {
-    /// Returns the tracing filter directive string.
     pub fn as_filter_str(&self) -> &'static str {
         match self {
             LogLevel::Trace => "trace",

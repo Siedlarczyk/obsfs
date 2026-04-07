@@ -33,10 +33,9 @@ pub struct ObsFs {
 }
 
 impl ObsFs {
-    /// Creates a new ObsFs instance with the given registry.
     pub fn new(registry: Registry) -> Self {
-        let uid = unsafe { libc::getuid() };
-        let gid = unsafe { libc::getgid() };
+        let uid = nix::unistd::getuid().as_raw();
+        let gid = nix::unistd::getgid().as_raw();
 
         Self {
             registry: Arc::new(RwLock::new(registry)),
@@ -54,13 +53,30 @@ impl ObsFs {
     /// all paths under /obs/proc/*.
     pub fn register_dynamic_handler(&mut self, handler: Arc<dyn DynamicHandler>) {
         let prefix = handler.prefix().to_string();
-        let mut handlers = self.dynamic_handlers.write().unwrap();
-        handlers.insert(prefix, handler);
+        match self.dynamic_handlers.write() {
+            Ok(mut handlers) => {
+                handlers.insert(prefix, handler);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Dynamic handlers lock poisoned, recovering with potentially stale data"
+                );
+                let mut handlers = e.into_inner();
+                handlers.insert(prefix, handler);
+            }
+        }
     }
 
-    /// Checks if a path should be handled by a dynamic handler.
     fn get_dynamic_handler(&self, path: &str) -> Option<(Arc<dyn DynamicHandler>, String)> {
-        let handlers = self.dynamic_handlers.read().unwrap();
+        let handlers = match self.dynamic_handlers.read() {
+            Ok(h) => h,
+            Err(_) => {
+                tracing::warn!(
+                    "Dynamic handlers lock poisoned during read, skipping dynamic handlers"
+                );
+                return None;
+            }
+        };
 
         // Check if path starts with any handler prefix
         for (prefix, handler) in handlers.iter() {
@@ -142,7 +158,14 @@ impl ObsFs {
             FsNode::Directory { .. } => Err(anyhow::anyhow!("cannot read directory")),
 
             FsNode::Metric { provider } => {
-                let format = *self.format.read().unwrap();
+                let format = match self.format.read() {
+                    Ok(f) => *f,
+                    Err(e) => {
+                        // Format lock is poisoned, use stale data
+                        tracing::warn!("Format lock poisoned, using recovered data");
+                        *e.into_inner()
+                    }
+                };
 
                 let value = match provider.collect() {
                     Ok(metric_value) => {
@@ -166,8 +189,14 @@ impl ObsFs {
     }
 
     fn ensure_inode(&self, path: &str) -> u64 {
-        let mut inodes = self.inodes.write().unwrap();
-        inodes.get_or_allocate(path)
+        match self.inodes.write() {
+            Ok(mut inodes) => inodes.get_or_allocate(path),
+            Err(e) => {
+                tracing::error!("Inode table lock poisoned during ensure_inode");
+                let mut inodes = e.into_inner();
+                inodes.get_or_allocate(path)
+            }
+        }
     }
 }
 
@@ -195,11 +224,17 @@ impl Filesystem for ObsFs {
         };
 
         let parent_path = {
-            let inodes = self.inodes.read().unwrap();
-            match inodes.resolve_path(parent) {
-                Some(p) => p.to_string(),
-                None => {
-                    reply.error(libc::ENOENT);
+            match self.inodes.read() {
+                Ok(inodes) => match inodes.resolve_path(parent) {
+                    Some(p) => p.to_string(),
+                    None => {
+                        reply.error(libc::ENOENT);
+                        return;
+                    }
+                },
+                Err(_) => {
+                    tracing::error!("Inode table lock poisoned during lookup");
+                    reply.error(libc::EIO);
                     return;
                 }
             }
@@ -208,27 +243,44 @@ impl Filesystem for ObsFs {
         let child_path = join_path(&parent_path, name);
 
         // First, check static registry
-        let registry = self.registry.read().unwrap();
-        if let Some(node) = registry.get(&child_path) {
-            let ino = self.ensure_inode(&child_path);
-            let attr = match node {
-                FsNode::Directory { .. } => self.dir_attr(ino),
-                FsNode::Metric { .. } => self.metric_attr(ino, METRIC_REPORTED_SIZE),
-                FsNode::Config { value, .. } => self.config_attr(ino, value.len() as u64 + 1),
-            };
-            reply.entry(&ENTRY_TTL, &attr, 0);
-            return;
+        match self.registry.read() {
+            Ok(registry) => {
+                if let Some(node) = registry.get(&child_path) {
+                    let ino = self.ensure_inode(&child_path);
+                    let attr = match node {
+                        FsNode::Directory { .. } => self.dir_attr(ino),
+                        FsNode::Metric { .. } => self.metric_attr(ino, METRIC_REPORTED_SIZE),
+                        FsNode::Config { value, .. } => {
+                            self.config_attr(ino, value.len() as u64 + 1)
+                        }
+                    };
+                    reply.entry(&ENTRY_TTL, &attr, 0);
+                    return;
+                }
+            }
+            Err(_) => {
+                tracing::error!("Registry lock poisoned during lookup");
+                reply.error(libc::EIO);
+                return;
+            }
         }
-        drop(registry);
 
         // Check if this is a dynamic handler prefix (directory)
         {
-            let handlers = self.dynamic_handlers.read().unwrap();
-            if handlers.contains_key(&child_path) {
-                // This is the root directory of a dynamic handler
-                let ino = self.ensure_inode(&child_path);
-                reply.entry(&ENTRY_TTL, &self.dir_attr(ino), 0);
-                return;
+            match self.dynamic_handlers.read() {
+                Ok(handlers) => {
+                    if handlers.contains_key(&child_path) {
+                        // This is the root directory of a dynamic handler
+                        let ino = self.ensure_inode(&child_path);
+                        reply.entry(&ENTRY_TTL, &self.dir_attr(ino), 0);
+                        return;
+                    }
+                }
+                Err(_) => {
+                    tracing::error!("Dynamic handlers lock poisoned during lookup");
+                    reply.error(libc::EIO);
+                    return;
+                }
             }
         }
 
@@ -253,35 +305,58 @@ impl Filesystem for ObsFs {
 
     fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
         let path = {
-            let inodes = self.inodes.read().unwrap();
-            match inodes.resolve_path(ino) {
-                Some(p) => p.to_string(),
-                None => {
-                    reply.error(libc::ENOENT);
+            match self.inodes.read() {
+                Ok(inodes) => match inodes.resolve_path(ino) {
+                    Some(p) => p.to_string(),
+                    None => {
+                        reply.error(libc::ENOENT);
+                        return;
+                    }
+                },
+                Err(_) => {
+                    tracing::error!("Inode table lock poisoned during getattr");
+                    reply.error(libc::EIO);
                     return;
                 }
             }
         };
 
         // Check static registry first
-        let registry = self.registry.read().unwrap();
-        if let Some(node) = registry.get(&path) {
-            let attr = match node {
-                FsNode::Directory { .. } => self.dir_attr(ino),
-                FsNode::Metric { .. } => self.metric_attr(ino, METRIC_REPORTED_SIZE),
-                FsNode::Config { value, .. } => self.config_attr(ino, value.len() as u64 + 1),
-            };
-            reply.attr(&ATTR_TTL, &attr);
-            return;
+        match self.registry.read() {
+            Ok(registry) => {
+                if let Some(node) = registry.get(&path) {
+                    let attr = match node {
+                        FsNode::Directory { .. } => self.dir_attr(ino),
+                        FsNode::Metric { .. } => self.metric_attr(ino, METRIC_REPORTED_SIZE),
+                        FsNode::Config { value, .. } => {
+                            self.config_attr(ino, value.len() as u64 + 1)
+                        }
+                    };
+                    reply.attr(&ATTR_TTL, &attr);
+                    return;
+                }
+            }
+            Err(_) => {
+                tracing::error!("Registry lock poisoned during getattr");
+                reply.error(libc::EIO);
+                return;
+            }
         }
-        drop(registry);
 
         // Check if this is a dynamic handler prefix (directory)
         {
-            let handlers = self.dynamic_handlers.read().unwrap();
-            if handlers.contains_key(&path) {
-                reply.attr(&ATTR_TTL, &self.dir_attr(ino));
-                return;
+            match self.dynamic_handlers.read() {
+                Ok(handlers) => {
+                    if handlers.contains_key(&path) {
+                        reply.attr(&ATTR_TTL, &self.dir_attr(ino));
+                        return;
+                    }
+                }
+                Err(_) => {
+                    tracing::error!("Dynamic handlers lock poisoned during getattr");
+                    reply.error(libc::EIO);
+                    return;
+                }
             }
         }
 
@@ -315,11 +390,17 @@ impl Filesystem for ObsFs {
         mut reply: ReplyDirectory,
     ) {
         let path = {
-            let inodes = self.inodes.read().unwrap();
-            match inodes.resolve_path(ino) {
-                Some(p) => p.to_string(),
-                None => {
-                    reply.error(libc::ENOENT);
+            match self.inodes.read() {
+                Ok(inodes) => match inodes.resolve_path(ino) {
+                    Some(p) => p.to_string(),
+                    None => {
+                        reply.error(libc::ENOENT);
+                        return;
+                    }
+                },
+                Err(_) => {
+                    tracing::error!("Inode table lock poisoned during readdir");
+                    reply.error(libc::EIO);
                     return;
                 }
             }
@@ -339,61 +420,88 @@ impl Filesystem for ObsFs {
 
         // Check if this is a dynamic handler directory
         {
-            let handlers = self.dynamic_handlers.read().unwrap();
-            if let Some(handler) = handlers.get(&path) {
-                // List dynamic entries
-                for name in handler.list_entries() {
-                    let child_path = join_path(&path, &name);
-                    let child_ino = self.ensure_inode(&child_path);
-                    entries.push((child_ino, FileType::RegularFile, name));
-                }
+            match self.dynamic_handlers.read() {
+                Ok(handlers) => {
+                    if let Some(handler) = handlers.get(&path) {
+                        // List dynamic entries
+                        for name in handler.list_entries() {
+                            let child_path = join_path(&path, &name);
+                            let child_ino = self.ensure_inode(&child_path);
+                            entries.push((child_ino, FileType::RegularFile, name));
+                        }
 
-                for (i, (ino, kind, name)) in entries.iter().enumerate().skip(offset as usize) {
-                    let full = reply.add(*ino, (i + 1) as i64, *kind, name);
-                    if full {
-                        break;
+                        for (i, (ino, kind, name)) in
+                            entries.iter().enumerate().skip(offset as usize)
+                        {
+                            let full = reply.add(*ino, (i + 1) as i64, *kind, name);
+                            if full {
+                                break;
+                            }
+                        }
+                        reply.ok();
+                        return;
                     }
                 }
-                reply.ok();
-                return;
+                Err(_) => {
+                    tracing::error!("Dynamic handlers lock poisoned during readdir");
+                    reply.error(libc::EIO);
+                    return;
+                }
             }
         }
 
         // Check static registry
-        let registry = self.registry.read().unwrap();
-        let node = match registry.get(&path) {
-            Some(n) => n,
-            None => {
-                reply.error(libc::ENOENT);
+        match self.registry.read() {
+            Ok(registry) => {
+                if let Some(node) = registry.get(&path) {
+                    let children = match node.children() {
+                        Some(c) => c,
+                        None => {
+                            reply.error(libc::ENOTDIR);
+                            return;
+                        }
+                    };
+
+                    for (name, child_node) in children {
+                        let child_path = join_path(&path, name);
+                        let child_ino = self.ensure_inode(&child_path);
+                        let kind = if child_node.is_directory() {
+                            FileType::Directory
+                        } else {
+                            FileType::RegularFile
+                        };
+                        entries.push((child_ino, kind, name.clone()));
+                    }
+                } else {
+                    reply.error(libc::ENOENT);
+                    return;
+                }
+            }
+            Err(_) => {
+                tracing::error!("Registry lock poisoned during readdir");
+                reply.error(libc::EIO);
                 return;
             }
-        };
-
-        let children = match node.children() {
-            Some(c) => c,
-            None => {
-                reply.error(libc::ENOTDIR);
-                return;
-            }
-        };
-
-        for (name, child_node) in children {
-            let child_path = join_path(&path, name);
-            let child_ino = self.ensure_inode(&child_path);
-            let kind = if child_node.is_directory() {
-                FileType::Directory
-            } else {
-                FileType::RegularFile
-            };
-            entries.push((child_ino, kind, name.clone()));
         }
 
         // Also add dynamic handler prefixes if we're at root
+        // (but skip if already added from static registry to avoid duplicates)
         if path.is_empty() {
-            let handlers = self.dynamic_handlers.read().unwrap();
-            for prefix in handlers.keys() {
-                let child_ino = self.ensure_inode(prefix);
-                entries.push((child_ino, FileType::Directory, prefix.clone()));
+            match self.dynamic_handlers.read() {
+                Ok(handlers) => {
+                    for prefix in handlers.keys() {
+                        // Skip if this prefix already exists as a static directory
+                        if !entries.iter().any(|(_, _, name)| name == prefix) {
+                            let child_ino = self.ensure_inode(prefix);
+                            entries.push((child_ino, FileType::Directory, prefix.clone()));
+                        }
+                    }
+                }
+                Err(_) => {
+                    tracing::error!("Dynamic handlers lock poisoned during readdir (phase 2)");
+                    reply.error(libc::EIO);
+                    return;
+                }
             }
         }
 
@@ -419,11 +527,17 @@ impl Filesystem for ObsFs {
         reply: ReplyData,
     ) {
         let path = {
-            let inodes = self.inodes.read().unwrap();
-            match inodes.resolve_path(ino) {
-                Some(p) => p.to_string(),
-                None => {
-                    reply.error(libc::ENOENT);
+            match self.inodes.read() {
+                Ok(inodes) => match inodes.resolve_path(ino) {
+                    Some(p) => p.to_string(),
+                    None => {
+                        reply.error(libc::ENOENT);
+                        return;
+                    }
+                },
+                Err(_) => {
+                    tracing::error!("Inode table lock poisoned during read");
+                    reply.error(libc::EIO);
                     return;
                 }
             }
@@ -444,26 +558,28 @@ impl Filesystem for ObsFs {
                         reply.data(&content[offset..end]);
                     }
                     return;
-                } else {
-                    reply.error(libc::ENOENT);
-                    return;
                 }
+                // If handler returns None, fall through to check static registry
             }
         }
 
         // Check static registry
-        let registry = self.registry.read().unwrap();
-        let node = match registry.get(&path) {
-            Some(n) => n,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
-
-        let content = match self.get_content(node, &path) {
-            Ok(c) => c,
+        let content = match self.registry.read() {
+            Ok(registry) => match registry.get(&path) {
+                Some(node) => match self.get_content(node, &path) {
+                    Ok(c) => c,
+                    Err(_) => {
+                        reply.error(libc::EIO);
+                        return;
+                    }
+                },
+                None => {
+                    reply.error(libc::ENOENT);
+                    return;
+                }
+            },
             Err(_) => {
+                tracing::error!("Registry lock poisoned during read");
                 reply.error(libc::EIO);
                 return;
             }

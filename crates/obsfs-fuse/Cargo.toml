@@ -1,67 +1,21 @@
-# =============================================================================
-# obsfs-fuse - FUSE Filesystem Implementation
-# =============================================================================
-#
-# This crate implements the actual FUSE filesystem. It bridges between:
-# - The Linux FUSE interface (via the `fuser` library)
-# - Our metric collection system (via obsfs-core and obsfs-plugins)
-#
-# When the kernel receives a filesystem operation (ls, cat, etc.) on /obs,
-# it forwards the request to this code via FUSE.
-#
-# ## Key Concepts
-#
-# ### FUSE (Filesystem in Userspace)
-#
-# Normally, filesystems run in kernel space. FUSE allows filesystems to run
-# in userspace (as a regular program), which is:
-# - Safer: Bugs don't crash the kernel
-# - Easier: Normal debugging, no kernel module development
-# - Portable: Works across different Linux versions
-#
-# ### Inodes
-#
-# Every file/directory in a Unix filesystem has an "inode number" - a unique
-# identifier. FUSE operations use inodes, not paths. We maintain a bidirectional
-# mapping between paths (like "system/cpu/usage") and inodes (like 12345).
-#
-# ### File Attributes
-#
-# Each file has attributes: size, permissions, timestamps, etc. These are
-# returned by `stat`/`getattr` operations. For virtual files, we generate
-# these on-the-fly.
-# =============================================================================
-
 [package]
 name = "obsfs-fuse"
-version = "0.1.0"
+version = "0.2.0"
 description = "FUSE filesystem implementation for ObsFS"
-
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-# Our core types and utilities
 obsfs-core = { path = "../obsfs-core" }
-
-# FUSE library - this is the main dependency for implementing the filesystem
 fuser = { workspace = true }
-
-# Low-level Unix bindings - for file mode constants, stat structures, etc.
 libc = { workspace = true }
-
-# Async runtime - for potential async operations
+nix = { workspace = true }
 tokio = { workspace = true }
-
-# Error handling
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-
-# Logging
 tracing = { workspace = true }
 
 [dev-dependencies]
-# For testing
 tempfile = "3"

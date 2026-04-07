@@ -59,19 +59,33 @@ disk: 67.8% (ok)
 
 ## Installation
 
-### Quick install (Linux)
+### Quick Install (Linux)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Siedlarczyk/obsfs/main/install.sh | sh
 ```
 
-### From source
+This script will:
+- Detect your architecture (x86_64 or ARM64)
+- Download the latest release
+- Install to `/usr/local/bin`
+- Fall back to building from source if needed
+
+### Debian/Ubuntu (.deb)
+
+```bash
+# Download and install (also installs fuse3 dependency)
+curl -LO https://github.com/Siedlarczyk/obsfs/releases/latest/download/obsfs_0.1.1_amd64.deb
+sudo apt install ./obsfs_0.1.1_amd64.deb
+```
+
+### From Source
 
 ```bash
 git clone https://github.com/Siedlarczyk/obsfs
 cd obsfs
-make build-release
-sudo make install
+cargo build --release
+sudo cp target/release/obsfs /usr/local/bin/
 ```
 
 ### With Nix
@@ -86,6 +100,24 @@ nix develop
 
 ```bash
 docker run --privileged ghcr.io/Siedlarczyk/obsfs:latest
+```
+
+## Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Siedlarczyk/obsfs/main/uninstall.sh | sh
+```
+
+Or manually:
+```bash
+sudo umount /obs
+sudo rm /usr/local/bin/obsfs
+sudo rm -rf /usr/local/lib/obsfs /etc/obsfs
+```
+
+For .deb installations:
+```bash
+sudo apt remove obsfs
 ```
 
 ## Quick Start

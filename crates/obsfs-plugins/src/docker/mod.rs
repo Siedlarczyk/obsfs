@@ -22,7 +22,7 @@ use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Result};
-use obsfs_core::{DynamicHandler, Plugin, Registry};
+use obsfs_core::{format_bytes, DynamicHandler, Plugin, Registry};
 use serde_json::Value;
 
 // =============================================================================
@@ -68,12 +68,29 @@ impl DockerClient {
             .read_to_string(&mut response)
             .map_err(|e| anyhow!("Failed to read from Docker socket: {}", e))?;
 
-        // Extract body from HTTP response
-        let body = response
-            .split("\r\n\r\n")
-            .nth(1)
+        // Split headers and body
+        let parts: Vec<&str> = response.split("\r\n\r\n").collect();
+        let headers = parts
+            .first()
+            .ok_or_else(|| anyhow!("Empty HTTP response"))?;
+        let body = parts
+            .get(1)
             .ok_or_else(|| anyhow!("Invalid Docker API response"))?
             .to_string();
+
+        // Parse status line to extract status code
+        let mut lines = headers.lines();
+        let status_line = lines.next().ok_or_else(|| anyhow!("Empty HTTP response"))?;
+        let status_code: u16 = status_line
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .ok_or_else(|| anyhow!("Invalid HTTP status line: {}", status_line))?;
+
+        // Validate status code is in 200-299 range
+        if !(200..300).contains(&status_code) {
+            return Err(anyhow!("HTTP {} error: {}", status_code, body));
+        }
 
         Ok(body)
     }
@@ -156,7 +173,6 @@ pub struct ContainerSummary {
 // DOCKER HANDLER
 // =============================================================================
 
-/// Handler for dynamic Docker container paths.
 pub struct DockerHandler {
     client: DockerClient,
 }
@@ -201,147 +217,204 @@ impl DockerHandler {
         bail!("Container '{}' not found", identifier)
     }
 
-    /// Get the status of a container.
-    fn get_status(&self, container_id: &str) -> Result<String> {
-        let resolved_id = self.resolve_container_id(container_id)?;
-        let info = self.client.inspect_container(&resolved_id)?;
-
-        let state = info
-            .get("State")
-            .ok_or_else(|| anyhow!("No State field in container info"))?;
-
-        let status = state
-            .get("Status")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-
-        let running = state
-            .get("Running")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        let mut output = String::new();
-        output.push_str(&format!("Status: {}\n", status));
-        output.push_str(&format!(
-            "Running: {}\n",
-            if running { "yes" } else { "no" }
-        ));
-
-        if let Some(pid) = state.get("Pid").and_then(|v| v.as_i64()) {
-            if pid > 0 {
-                output.push_str(&format!("PID: {}\n", pid));
-            }
-        }
-
-        if let Some(start_time) = state.get("StartedAt").and_then(|v| v.as_str()) {
-            output.push_str(&format!("Started: {}\n", start_time));
-        }
-
-        if let Some(exit_code) = state.get("ExitCode").and_then(|v| v.as_i64()) {
-            if exit_code != 0 {
-                output.push_str(&format!("Exit Code: {}\n", exit_code));
-            }
-        }
-
-        if let Some(error) = state.get("Error").and_then(|v| v.as_str()) {
-            if !error.is_empty() {
-                output.push_str(&format!("Error: {}\n", error));
-            }
-        }
-
-        Ok(output)
-    }
-
-    /// Get container stats (CPU, memory, network).
-    fn get_stats_info(&self, container_id: &str) -> Result<String> {
-        let resolved_id = self.resolve_container_id(container_id)?;
-        let stats = self.client.get_stats(&resolved_id)?;
-
-        let mut output = String::new();
-        output.push_str("Container Stats\n");
-        output.push_str("===============\n\n");
-
-        // CPU Stats
-        if let Some(cpu_stats) = stats.get("cpu_stats") {
-            if let Some(cpu_delta) = cpu_stats.get("cpu_delta").and_then(|v| v.as_i64()) {
-                if let Some(system_delta) =
-                    cpu_stats.get("system_cpu_delta").and_then(|v| v.as_i64())
-                {
-                    if system_delta > 0 {
-                        let cpu_percent = (cpu_delta as f64 / system_delta as f64) * 100.0;
-                        output.push_str(&format!("CPU Usage: {:.2}%\n", cpu_percent));
-                    }
-                }
-            }
-        }
-
-        // Memory Stats
-        if let Some(memory_stats) = stats.get("memory_stats") {
-            if let Some(usage) = memory_stats.get("usage").and_then(|v| v.as_i64()) {
-                output.push_str(&format!("Memory Usage: {}\n", format_bytes(usage as u64)));
-            }
-            if let Some(limit) = memory_stats.get("limit").and_then(|v| v.as_i64()) {
-                if limit > 0 {
-                    if let Some(usage) = memory_stats.get("usage").and_then(|v| v.as_i64()) {
-                        let percent = (usage as f64 / limit as f64) * 100.0;
-                        output.push_str(&format!(
-                            "Memory Limit: {} ({:.1}%)\n",
-                            format_bytes(limit as u64),
-                            percent
-                        ));
-                    }
-                }
-            }
-        }
-
-        // Network Stats
-        if let Some(networks) = stats.get("networks").and_then(|v| v.as_object()) {
-            if !networks.is_empty() {
-                output.push_str("\nNetwork:\n");
-                for (iface, stats) in networks {
-                    output.push_str(&format!("  {}: ", iface));
-                    if let Some(rx) = stats.get("rx_bytes").and_then(|v| v.as_i64()) {
-                        output.push_str(&format!("RX {} ", format_bytes(rx as u64)));
-                    }
-                    if let Some(tx) = stats.get("tx_bytes").and_then(|v| v.as_i64()) {
-                        output.push_str(&format!("TX {}", format_bytes(tx as u64)));
-                    }
-                    output.push('\n');
-                }
-            }
-        }
-
-        Ok(output)
-    }
-
-    /// Get detailed container information.
-    fn get_info(&self, container_id: &str) -> Result<String> {
+    /// Get all container information in a single output.
+    fn get_full_info(&self, container_id: &str) -> Result<String> {
         let resolved_id = self.resolve_container_id(container_id)?;
         let info = self.client.inspect_container(&resolved_id)?;
 
         let mut output = String::new();
 
-        // Container ID and names
-        if let Some(id) = info.get("Id").and_then(|v| v.as_str()) {
-            output.push_str(&format!("ID: {}\n", id));
-        }
-
+        // === BASIC INFO ===
         if let Some(name) = info.get("Name").and_then(|v| v.as_str()) {
             output.push_str(&format!("Name: {}\n", name.trim_start_matches('/')));
         }
-
-        output.push('\n');
-
-        // Image
-        if let Some(image) = info.get("Image").and_then(|v| v.as_str()) {
-            output.push_str(&format!("Image: {}\n", image));
+        if let Some(id) = info.get("Id").and_then(|v| v.as_str()) {
+            output.push_str(&format!("ID: {}\n", &id[..12.min(id.len())]));
         }
 
-        // Config
+        // Image
         if let Some(config) = info.get("Config") {
+            if let Some(image) = config.get("Image").and_then(|v| v.as_str()) {
+                output.push_str(&format!("Image: {}\n", image));
+            }
+        }
+
+        // State
+        if let Some(state) = info.get("State") {
+            let status = state
+                .get("Status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            output.push_str(&format!("Status: {}\n", status));
+
+            if let Some(pid) = state.get("Pid").and_then(|v| v.as_i64()) {
+                if pid > 0 {
+                    output.push_str(&format!("PID: {}\n", pid));
+                }
+            }
+
+            if let Some(started) = state.get("StartedAt").and_then(|v| v.as_str()) {
+                if !started.starts_with("0001") {
+                    output.push_str(&format!("Started: {}\n", started));
+                }
+            }
+
+            if let Some(restart_count) = state.get("RestartCount").and_then(|v| v.as_i64()) {
+                if restart_count > 0 {
+                    output.push_str(&format!("Restarts: {}\n", restart_count));
+                }
+            }
+        }
+
+        // Created
+        if let Some(created) = info.get("Created").and_then(|v| v.as_str()) {
+            output.push_str(&format!("Created: {}\n", created));
+        }
+
+        // === RESOURCES (live stats) ===
+        output.push_str("\n[Resources]\n");
+        if let Ok(stats) = self.client.get_stats(&resolved_id) {
+            // CPU
+            if let Some(cpu_stats) = stats.get("cpu_stats") {
+                if let (Some(cpu_usage), Some(system_usage)) = (
+                    cpu_stats
+                        .get("cpu_usage")
+                        .and_then(|c| c.get("total_usage"))
+                        .and_then(|v| v.as_u64()),
+                    cpu_stats.get("system_cpu_usage").and_then(|v| v.as_u64()),
+                ) {
+                    if let Some(precpu_stats) = stats.get("precpu_stats") {
+                        if let (Some(precpu_usage), Some(presystem_usage)) = (
+                            precpu_stats
+                                .get("cpu_usage")
+                                .and_then(|c| c.get("total_usage"))
+                                .and_then(|v| v.as_u64()),
+                            precpu_stats
+                                .get("system_cpu_usage")
+                                .and_then(|v| v.as_u64()),
+                        ) {
+                            let cpu_delta = cpu_usage.saturating_sub(precpu_usage);
+                            let system_delta = system_usage.saturating_sub(presystem_usage);
+                            if system_delta > 0 {
+                                let num_cpus = cpu_stats
+                                    .get("online_cpus")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(1);
+                                let cpu_percent = (cpu_delta as f64 / system_delta as f64)
+                                    * num_cpus as f64
+                                    * 100.0;
+                                output.push_str(&format!("CPU: {:.1}%\n", cpu_percent));
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Memory
+            if let Some(memory_stats) = stats.get("memory_stats") {
+                if let Some(usage) = memory_stats.get("usage").and_then(|v| v.as_u64()) {
+                    let cache = memory_stats
+                        .get("stats")
+                        .and_then(|s| s.get("cache"))
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let mem_usage = usage.saturating_sub(cache);
+
+                    if let Some(limit) = memory_stats.get("limit").and_then(|v| v.as_u64()) {
+                        if limit > 0 && limit < u64::MAX / 2 {
+                            let percent = (mem_usage as f64 / limit as f64) * 100.0;
+                            output.push_str(&format!(
+                                "Memory: {} / {} ({:.1}%)\n",
+                                format_bytes(mem_usage),
+                                format_bytes(limit),
+                                percent
+                            ));
+                        } else {
+                            output.push_str(&format!("Memory: {}\n", format_bytes(mem_usage)));
+                        }
+                    } else {
+                        output.push_str(&format!("Memory: {}\n", format_bytes(mem_usage)));
+                    }
+                }
+            }
+
+            // Network
+            if let Some(networks) = stats.get("networks").and_then(|v| v.as_object()) {
+                let mut total_rx: u64 = 0;
+                let mut total_tx: u64 = 0;
+                for (_iface, net_stats) in networks {
+                    total_rx += net_stats
+                        .get("rx_bytes")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    total_tx += net_stats
+                        .get("tx_bytes")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                }
+                output.push_str(&format!(
+                    "Network: RX {} / TX {}\n",
+                    format_bytes(total_rx),
+                    format_bytes(total_tx)
+                ));
+            }
+        }
+
+        // === NETWORK CONFIG ===
+        output.push_str("\n[Network]\n");
+        if let Some(network_settings) = info.get("NetworkSettings") {
+            if let Some(ip) = network_settings.get("IPAddress").and_then(|v| v.as_str()) {
+                if !ip.is_empty() {
+                    output.push_str(&format!("IP: {}\n", ip));
+                }
+            }
+
+            // Ports
+            if let Some(ports) = network_settings.get("Ports").and_then(|v| v.as_object()) {
+                let mut port_mappings = Vec::new();
+                for (container_port, host_bindings) in ports {
+                    if let Some(bindings) = host_bindings.as_array() {
+                        for binding in bindings {
+                            if let (Some(host_ip), Some(host_port)) = (
+                                binding.get("HostIp").and_then(|v| v.as_str()),
+                                binding.get("HostPort").and_then(|v| v.as_str()),
+                            ) {
+                                port_mappings.push(format!(
+                                    "{} -> {}:{}",
+                                    container_port, host_ip, host_port
+                                ));
+                            }
+                        }
+                    }
+                }
+                if !port_mappings.is_empty() {
+                    output.push_str(&format!("Ports: {}\n", port_mappings.join(", ")));
+                }
+            }
+        }
+
+        // === CONFIG ===
+        output.push_str("\n[Config]\n");
+        if let Some(config) = info.get("Config") {
+            // Command
+            if let Some(cmd) = config.get("Cmd").and_then(|v| v.as_array()) {
+                let cmd_str: Vec<&str> = cmd.iter().filter_map(|v| v.as_str()).collect();
+                if !cmd_str.is_empty() {
+                    output.push_str(&format!("Command: {}\n", cmd_str.join(" ")));
+                }
+            }
+
+            // Entrypoint
+            if let Some(entrypoint) = config.get("Entrypoint").and_then(|v| v.as_array()) {
+                let ep_str: Vec<&str> = entrypoint.iter().filter_map(|v| v.as_str()).collect();
+                if !ep_str.is_empty() {
+                    output.push_str(&format!("Entrypoint: {}\n", ep_str.join(" ")));
+                }
+            }
+
             if let Some(working_dir) = config.get("WorkingDir").and_then(|v| v.as_str()) {
                 if !working_dir.is_empty() {
-                    output.push_str(&format!("Working Dir: {}\n", working_dir));
+                    output.push_str(&format!("WorkingDir: {}\n", working_dir));
                 }
             }
 
@@ -350,62 +423,31 @@ impl DockerHandler {
                     output.push_str(&format!("User: {}\n", user));
                 }
             }
-
-            if let Some(env) = config.get("Env").and_then(|v| v.as_array()) {
-                if !env.is_empty() {
-                    output.push_str("\nEnvironment:\n");
-                    for e in env.iter().take(5) {
-                        if let Some(s) = e.as_str() {
-                            output.push_str(&format!("  {}\n", s));
-                        }
-                    }
-                    if env.len() > 5 {
-                        output.push_str(&format!("  ... and {} more\n", env.len() - 5));
-                    }
-                }
-            }
         }
 
-        // Host config
-        if let Some(host_config) = info.get("HostConfig") {
-            output.push_str("\nResources:\n");
-
-            if let Some(cpu_shares) = host_config.get("CpuShares").and_then(|v| v.as_i64()) {
-                if cpu_shares > 0 {
-                    output.push_str(&format!("  CPU Shares: {}\n", cpu_shares));
-                }
-            }
-
-            if let Some(memory) = host_config.get("Memory").and_then(|v| v.as_i64()) {
-                if memory > 0 {
-                    output.push_str(&format!(
-                        "  Memory Limit: {}\n",
-                        format_bytes(memory as u64)
-                    ));
-                }
-            }
-
-            if let Some(memswap) = host_config.get("MemorySwap").and_then(|v| v.as_i64()) {
-                if memswap > 0 {
-                    output.push_str(&format!("  Swap Limit: {}\n", format_bytes(memswap as u64)));
-                }
-            }
-        }
-
-        // Mounts
+        // === MOUNTS ===
         if let Some(mounts) = info.get("Mounts").and_then(|v| v.as_array()) {
             if !mounts.is_empty() {
-                output.push_str("\nMounts:\n");
-                for mount in mounts.iter().take(5) {
-                    if let Some(source) = mount.get("Source").and_then(|v| v.as_str()) {
-                        if let Some(destination) = mount.get("Destination").and_then(|v| v.as_str())
-                        {
-                            output.push_str(&format!("  {} -> {}\n", source, destination));
-                        }
-                    }
-                }
-                if mounts.len() > 5 {
-                    output.push_str(&format!("  ... and {} more\n", mounts.len() - 5));
+                output.push_str("\n[Mounts]\n");
+                for mount in mounts {
+                    let mount_type = mount
+                        .get("Type")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown");
+                    let source = mount.get("Source").and_then(|v| v.as_str()).unwrap_or("?");
+                    let dest = mount
+                        .get("Destination")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?");
+                    let rw = if mount.get("RW").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        "rw"
+                    } else {
+                        "ro"
+                    };
+                    output.push_str(&format!(
+                        "- {} -> {} ({}, {})\n",
+                        source, dest, mount_type, rw
+                    ));
                 }
             }
         }
@@ -440,51 +482,26 @@ impl DynamicHandler for DockerHandler {
                 result.dedup();
                 result
             }
-            Err(_) => {
-                // If we can't list containers, return empty
-                Vec::new()
-            }
+            Err(_) => Vec::new(),
         }
     }
 
     fn exists(&self, subpath: &str) -> bool {
-        // subpath should be in format: "container_id/stat_type"
-        // e.g., "my-container/status" or "abc123/stats"
-
-        let parts: Vec<&str> = subpath.split('/').collect();
-        if parts.is_empty() {
+        if subpath.is_empty() {
             return false;
         }
-
-        let container_id = parts[0];
-
-        // If there's a subtype, validate it
-        if parts.len() > 1 {
-            let stat_type = parts[1];
-            if !matches!(stat_type, "status" | "stats" | "info") {
-                return false;
-            }
+        // Only single-level paths (container ID or name)
+        if subpath.contains('/') {
+            return false;
         }
-
-        // Try to resolve the container
-        self.resolve_container_id(container_id).is_ok()
+        self.resolve_container_id(subpath).is_ok()
     }
 
     fn read(&self, subpath: &str) -> Option<String> {
-        let parts: Vec<&str> = subpath.split('/').collect();
-        if parts.is_empty() {
+        if subpath.is_empty() || subpath.contains('/') {
             return None;
         }
-
-        let container_id = parts[0];
-        let stat_type = parts.get(1).copied().unwrap_or("status");
-
-        match stat_type {
-            "status" => self.get_status(container_id).ok(),
-            "stats" => self.get_stats_info(container_id).ok(),
-            "info" => self.get_info(container_id).ok(),
-            _ => None,
-        }
+        self.get_full_info(subpath).ok()
     }
 }
 
@@ -539,41 +556,12 @@ impl Default for DockerPlugin {
 }
 
 // =============================================================================
-// UTILITIES
-// =============================================================================
-
-/// Format bytes into human-readable string.
-fn format_bytes(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = KB * 1024;
-    const GB: u64 = MB * 1024;
-
-    if bytes >= GB {
-        format!("{:.1}GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.1}MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.1}KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{}B", bytes)
-    }
-}
-
-// =============================================================================
 // TESTS
 // =============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_bytes() {
-        assert_eq!(format_bytes(500), "500B");
-        assert_eq!(format_bytes(2048), "2.0KB");
-        assert_eq!(format_bytes(1_500_000), "1.4MB");
-        assert_eq!(format_bytes(2_500_000_000), "2.3GB");
-    }
 
     #[test]
     fn test_docker_plugin_metadata() {

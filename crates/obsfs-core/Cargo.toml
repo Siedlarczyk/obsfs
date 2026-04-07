@@ -1,63 +1,20 @@
-# =============================================================================
-# obsfs-core - Core Types and Utilities
-# =============================================================================
-#
-# This crate contains the foundational types shared across all other crates:
-# - MetricValue: The different kinds of values a metric can have
-# - MetricProvider: The trait that all collectors implement
-# - FsNode: The virtual filesystem tree structure
-# - Config: Configuration parsing and validation
-# - Cache: TTL-based caching for metric values
-#
-# This crate is a LIBRARY (not a binary), so other crates depend on it.
-# =============================================================================
-
 [package]
 name = "obsfs-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Core types and utilities for ObsFS"
-
-# Inherit common metadata from workspace
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-# =============================================================================
-# DEPENDENCIES
-# =============================================================================
-# The `{ workspace = true }` syntax means "use the version defined in the
-# root Cargo.toml's [workspace.dependencies] section". This ensures all
-# crates use the same version.
-# =============================================================================
-
 [dependencies]
-# Async runtime - needed for broadcast channels in MetricValue::Stream
 tokio = { workspace = true }
-
-# Serialization - for Config and JSON output format
 serde = { workspace = true }
-
-# TOML parsing - for configuration files
 toml = { workspace = true }
-
-# Error handling
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-
-# Logging
 tracing = { workspace = true }
-
-# Date/time for timestamps
 chrono = { workspace = true }
 
-# =============================================================================
-# DEV DEPENDENCIES
-# =============================================================================
-# These are only used when running tests (`cargo test`), not in the final binary.
-# This keeps the production binary smaller.
-# =============================================================================
-
 [dev-dependencies]
-# Tokio test utilities for async tests
 tokio = { workspace = true, features = ["test-util", "macros"] }

@@ -4,7 +4,6 @@ use obsfs_core::{MetricProvider, MetricValue};
 use std::collections::HashMap;
 use std::fs;
 
-/// Provides a single memory metric from /proc/meminfo.
 #[derive(Debug)]
 pub struct MemoryMetricProvider {
     proc_path: String,
@@ -58,7 +57,6 @@ impl MetricProvider for MemoryMetricProvider {
     }
 }
 
-/// Provides swap used (calculated as SwapTotal - SwapFree).
 #[derive(Debug)]
 pub struct SwapUsedProvider {
     proc_path: String,
