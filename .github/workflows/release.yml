@@ -67,9 +67,12 @@ jobs:
           docker run --rm --platform linux/arm64 \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            rust:latest \
+            debian:bookworm \
             bash -c "
-              apt-get update && apt-get install -y libfuse3-dev pkg-config patchelf &&
+              apt-get update &&
+              apt-get install -y curl build-essential libfuse3-dev pkg-config patchelf &&
+              curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y &&
+              . ~/.cargo/env &&
               cargo build --release --locked &&
               mkdir -p bundle/lib &&
               cp target/release/obsfs bundle/ &&
