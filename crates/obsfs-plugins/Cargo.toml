@@ -1,0 +1,54 @@
+# =============================================================================
+# obsfs-plugins - Metric Plugins
+# =============================================================================
+#
+# Este crate contém os diversos plugins que coletam métricas de diferentes
+# fontes:
+#
+# - ProcSysPlugin: Lê de /proc e /sys (interfaces do kernel Linux)
+#
+# Cada plugin implementa a trait `Plugin` do obsfs-core.
+#
+# ## Filosofia de Design
+#
+# Plugins são:
+# - **Lazy**: Só coletam quando solicitado (sem polling em background)
+# - **Cached**: Resultados são cacheados com TTL para evitar coleta excessiva
+# - **Thread-safe**: Seguros para uso de múltiplas threads
+# - **Resilientes**: Erros são logados mas não crasham o daemon
+# =============================================================================
+
+[package]
+name = "obsfs-plugins"
+version = "0.1.0"
+description = "Metric plugins for ObsFS"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Core types (MetricProvider trait, MetricValue, etc.)
+obsfs-core = { path = "../obsfs-core" }
+
+# Low-level Unix bindings for statvfs
+libc = { workspace = true }
+
+# Async runtime for I/O operations
+tokio = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# JSON parsing for Docker API
+serde_json = "1"
+
+[dev-dependencies]
+# Para testes
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = "3"

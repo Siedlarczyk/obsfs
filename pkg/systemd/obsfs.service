@@ -1,0 +1,56 @@
+[Unit]
+Description=ObsFS - Observability Filesystem
+Documentation=https://github.com/Siedlarczyk/obsfs
+After=local-fs.target network.target
+Wants=local-fs.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /obs
+ExecStart=/usr/local/bin/obsfs mount /obs --config /etc/obsfs/config.toml --allow-other
+ExecStop=/usr/local/bin/obsfs unmount /obs
+ExecStopPost=/bin/rmdir /obs 2>/dev/null || true
+
+# User/Group (uncomment to run as non-root after mount)
+# User=obsfs
+# Group=obsfs
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Required permissions
+ReadOnlyPaths=/
+ReadWritePaths=/obs /etc/obsfs
+CapabilityBoundingSet=CAP_SYS_ADMIN
+AmbientCapabilities=CAP_SYS_ADMIN
+
+# /proc access for metrics collection
+ProtectProc=default
+ProcSubset=all
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=50%
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=obsfs
+
+# Watchdog (requires sd_notify support in app)
+# WatchdogSec=30
+
+[Install]
+WantedBy=multi-user.target

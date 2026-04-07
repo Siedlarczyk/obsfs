@@ -1,0 +1,52 @@
+# Template unit for running multiple ObsFS instances
+# Usage: systemctl start obsfs@myinstance.service
+# Mount point will be /obs/%i (e.g., /obs/myinstance)
+# Config file: /etc/obsfs/%i.toml
+
+[Unit]
+Description=ObsFS - Observability Filesystem (%i)
+Documentation=https://github.com/Siedlarczyk/obsfs
+After=local-fs.target network.target
+Wants=local-fs.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /obs/%i
+ExecStart=/usr/local/bin/obsfs mount /obs/%i --config /etc/obsfs/%i.toml --allow-other
+ExecStop=/usr/local/bin/obsfs unmount /obs/%i
+ExecStopPost=/bin/rmdir /obs/%i 2>/dev/null || true
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Required permissions
+ReadOnlyPaths=/
+ReadWritePaths=/obs/%i /etc/obsfs
+CapabilityBoundingSet=CAP_SYS_ADMIN
+AmbientCapabilities=CAP_SYS_ADMIN
+
+# /proc access
+ProtectProc=default
+ProcSubset=all
+
+# Resource limits
+MemoryMax=256M
+CPUQuota=50%
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=obsfs-%i
+
+[Install]
+WantedBy=multi-user.target

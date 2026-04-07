@@ -1,0 +1,64 @@
+# =============================================================================
+# ObsFS Docker Image (Alpine - Smaller)
+# =============================================================================
+# Minimal Alpine-based image (~15MB smaller than Debian)
+#
+# Build:
+#   docker build -t obsfs:alpine -f pkg/docker/Dockerfile.alpine .
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build
+# -----------------------------------------------------------------------------
+FROM rust:1.77-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    musl-dev \
+    pkgconfig \
+    fuse3-dev
+
+WORKDIR /build
+
+# Cache dependencies
+COPY Cargo.toml Cargo.lock ./
+COPY crates/obsfs-core/Cargo.toml crates/obsfs-core/
+COPY crates/obsfs-fuse/Cargo.toml crates/obsfs-fuse/
+COPY crates/obsfs-plugins/Cargo.toml crates/obsfs-plugins/
+COPY crates/obsfs-cli/Cargo.toml crates/obsfs-cli/
+
+RUN mkdir -p crates/obsfs-core/src crates/obsfs-fuse/src crates/obsfs-plugins/src crates/obsfs-cli/src && \
+    echo "pub fn dummy() {}" > crates/obsfs-core/src/lib.rs && \
+    echo "pub fn dummy() {}" > crates/obsfs-fuse/src/lib.rs && \
+    echo "pub fn dummy() {}" > crates/obsfs-plugins/src/lib.rs && \
+    echo "fn main() {}" > crates/obsfs-cli/src/main.rs
+
+RUN cargo build --release && rm -rf target/release/.fingerprint/obsfs*
+
+# Copy actual source and build
+COPY crates crates
+RUN cargo build --release --locked
+
+# -----------------------------------------------------------------------------
+# Stage 2: Runtime
+# -----------------------------------------------------------------------------
+FROM alpine:3.19
+
+RUN apk add --no-cache fuse3 \
+    && echo "user_allow_other" >> /etc/fuse.conf
+
+COPY --from=builder /build/target/release/obsfs /usr/local/bin/obsfs
+COPY config/default.toml /etc/obsfs/config.toml
+
+RUN mkdir -p /obs
+
+LABEL org.opencontainers.image.title="ObsFS"
+LABEL org.opencontainers.image.description="Observability Filesystem"
+
+ENV RUST_LOG=warn
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD test -d /obs/system || exit 1
+
+ENTRYPOINT ["/usr/local/bin/obsfs"]
+CMD ["mount", "/obs", "--allow-other"]

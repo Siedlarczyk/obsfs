@@ -1,0 +1,78 @@
+# =============================================================================
+# ObsFS Docker Compose
+# =============================================================================
+# Usage:
+#   docker compose up -d          # Start ObsFS
+#   docker compose logs -f        # View logs
+#   docker compose down           # Stop
+#
+# Access metrics:
+#   docker compose exec obsfs cat /obs/system/cpu/usage
+# =============================================================================
+
+services:
+  obsfs:
+    build:
+      context: .
+      dockerfile: pkg/docker/Dockerfile
+    image: obsfs:latest
+    container_name: obsfs
+
+    # FUSE requires elevated privileges
+    privileged: true
+    # Or use explicit capabilities (less permissive):
+    # cap_add:
+    #   - SYS_ADMIN
+    # devices:
+    #   - /dev/fuse
+
+    # Mount host /proc for system metrics
+    volumes:
+      - /proc:/host/proc:ro
+      - ./config/default.toml:/etc/obsfs/config.toml:ro
+      # Expose metrics to host (optional)
+      # - obsfs-data:/obs
+
+    environment:
+      - RUST_LOG=info
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "test", "-d", "/obs/system"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# -----------------------------------------------------------------------------
+# Development profile
+# -----------------------------------------------------------------------------
+# Usage: docker compose --profile dev up
+  obsfs-dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: pkg/docker/Dockerfile
+    container_name: obsfs-dev
+    privileged: true
+    volumes:
+      - /proc:/host/proc:ro
+      - ./config/default.toml:/etc/obsfs/config.toml:ro
+    environment:
+      - RUST_LOG=debug
+    ports:
+      # If HTTP endpoint is added later
+      - "9090:9090"
+
+# volumes:
+#   obsfs-data:

@@ -1,0 +1,36 @@
+# Build artifacts
+target/
+*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in image)
+docs/
+*.md
+!config/*.md
+
+# CI/CD
+.github/
+
+# Development files
+.envrc
+.direnv/
+.claude/
+tests/
+
+# Nix
+flake.lock
+flake.nix
+result
+
+# OS files
+.DS_Store
+Thumbs.db

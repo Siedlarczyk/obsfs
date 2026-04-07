@@ -1,0 +1,69 @@
+# =============================================================================
+# obsfs-cli - Command Line Interface
+# =============================================================================
+#
+# This crate provides the `obsfs` binary that users interact with.
+#
+# ## Commands
+#
+# - `obsfs mount <path>` - Mount the filesystem
+# - `obsfs unmount <path>` - Unmount the filesystem
+# - `obsfs status` - Show daemon status
+# - `obsfs version` - Show version
+#
+# ## Example Usage
+#
+# ```bash
+# # Mount the filesystem
+# sudo obsfs mount /obs
+#
+# # Check status
+# obsfs status
+#
+# # Unmount
+# sudo obsfs unmount /obs
+# ```
+# =============================================================================
+
+[package]
+name = "obsfs-cli"
+version = "0.1.0"
+description = "Command-line interface for ObsFS"
+
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# This is the main binary
+[[bin]]
+name = "obsfs"
+path = "src/main.rs"
+
+[dependencies]
+# Internal crates
+obsfs-core = { path = "../obsfs-core" }
+obsfs-fuse = { path = "../obsfs-fuse" }
+obsfs-plugins = { path = "../obsfs-plugins" }
+
+# CLI argument parsing
+clap = { workspace = true }
+
+# FUSE library for mounting
+fuser = { workspace = true }
+
+# Unix-specific operations
+nix = { workspace = true }
+
+# Async runtime (for potential future async operations)
+tokio = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Signal handling for graceful shutdown
+ctrlc = "3.4"
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

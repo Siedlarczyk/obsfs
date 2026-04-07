@@ -1,0 +1,71 @@
+# =============================================================================
+# ObsFS Default Configuration
+# =============================================================================
+#
+# This file contains the default configuration for ObsFS.
+# Copy this to /etc/obsfs/config.toml and modify as needed.
+#
+# All values shown here are the defaults - you only need to specify values
+# you want to change.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Mount Configuration
+# -----------------------------------------------------------------------------
+# Controls where and how the filesystem is mounted.
+
+[mount]
+# Path where the filesystem will be mounted.
+# This directory must exist before mounting.
+path = "/obs"
+
+# Whether to allow other users (not just root) to access the mount.
+# Requires 'user_allow_other' to be set in /etc/fuse.conf
+allow_other = true
+
+# -----------------------------------------------------------------------------
+# Output Format Configuration
+# -----------------------------------------------------------------------------
+# Controls how metric values are formatted when read.
+
+[format]
+# Default output format.
+# Options:
+#   - "plain": Just the value (e.g., "23.4")
+#   - "json": JSON with metadata (e.g., {"value":23.4,"type":"gauge",...})
+#
+# Can be changed at runtime: echo "json" > /obs/_meta/format
+default = "plain"
+
+# -----------------------------------------------------------------------------
+# Logging Configuration
+# -----------------------------------------------------------------------------
+# Controls the daemon's own logging (not the metrics it collects).
+# Note: RUST_LOG environment variable takes precedence over these settings.
+
+[logging]
+# Log level filter.
+# Options: "trace", "debug", "info", "warn", "error"
+level = "warn"
+
+# Log output format.
+# Options:
+#   - "json": Structured JSON (good for log aggregators like Loki, Elasticsearch)
+#   - "pretty": Human-readable with colors (good for terminal)
+#   - "compact": Single-line human-readable (good for traditional log files)
+format = "compact"
+
+# Log output destination.
+# Options:
+#   - "stdout": Standard output
+#   - "stderr": Standard error (default)
+#   - { file = "/var/log/obsfs.log" }: Log to a file
+output = "stderr"
+
+# Whether to include the target (module path) in log messages.
+# Useful for debugging to see which module emitted the log.
+show_target = false
+
+# Whether to include file path and line number in log messages.
+# Useful for debugging, but verbose for production.
+show_location = false
