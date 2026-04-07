@@ -80,7 +80,7 @@ impl DockerClient {
 
     /// List all containers (abbreviated output).
     pub fn list_containers(&self) -> Result<Vec<ContainerSummary>> {
-        let response = self.send_request("GET", "/v1.24/containers/json?all=1&limit=100")?;
+        let response = self.send_request("GET", "/v1.43/containers/json?all=1&limit=100")?;
 
         let containers: Vec<Value> = serde_json::from_str(&response)
             .map_err(|e| anyhow!("Failed to parse containers list: {}", e))?;
@@ -117,7 +117,7 @@ impl DockerClient {
     /// Get detailed container information.
     pub fn inspect_container(&self, container_id: &str) -> Result<Value> {
         let response =
-            self.send_request("GET", &format!("/v1.24/containers/{}/json", container_id))?;
+            self.send_request("GET", &format!("/v1.43/containers/{}/json", container_id))?;
 
         serde_json::from_str(&response)
             .map_err(|e| anyhow!("Failed to parse container info: {}", e))
@@ -127,7 +127,7 @@ impl DockerClient {
     pub fn get_stats(&self, container_id: &str) -> Result<Value> {
         let response = self.send_request(
             "GET",
-            &format!("/v1.24/containers/{}/stats?stream=0", container_id),
+            &format!("/v1.43/containers/{}/stats?stream=0", container_id),
         )?;
 
         serde_json::from_str(&response)

@@ -6,6 +6,7 @@
 //! All plugins implement the [`Plugin`] trait for unified registration.
 
 #![allow(clippy::new_without_default)]
+#![allow(clippy::unnecessary_cast)] // Needed for cross-platform compat (macOS u32 vs Linux u64)
 
 pub use obsfs_core::{DynamicHandler, MetricProvider, MetricValue, Plugin};
 

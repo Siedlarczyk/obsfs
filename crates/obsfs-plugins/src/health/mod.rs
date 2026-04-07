@@ -297,10 +297,10 @@ impl HealthProvider {
             };
         }
 
-        let block_size = stat.f_frsize;
-        let total = stat.f_blocks * block_size;
-        let available = stat.f_bavail * block_size;
-        let used = total.saturating_sub(stat.f_bfree * block_size);
+        let block_size = stat.f_frsize as u64;
+        let total = stat.f_blocks as u64 * block_size;
+        let available = stat.f_bavail as u64 * block_size;
+        let used = total.saturating_sub(stat.f_bfree as u64 * block_size);
 
         let percent = if total > 0 {
             (used as f64 / total as f64) * 100.0
